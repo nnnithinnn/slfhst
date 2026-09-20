@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage1: systemd-networkd + Quad9 DoT resolved config
+ConditionPathExists=!/var/lib/slfhst/stage1.done
+After=slfhst-stage1-detect-disks.service
+Before=slfhst-stage1-wizard.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage1_network.py

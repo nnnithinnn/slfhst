@@ -1,0 +1,27 @@
+# Traefik: TLS via Cloudflare DNS-01, static+file provider (no docker/podman
+# socket exposure needed -- routes are declared explicitly in dynamic.yml,
+# rendered alongside this file, rather than discovered via container labels).
+[Unit]
+Description=Traefik reverse proxy
+After=slfhst-network.network
+
+[Container]
+Image=docker.io/library/traefik:v3.3
+AutoUpdate=registry
+Network=slfhst-network.network
+PublishPort=8443:8443
+Volume=/srv/data/traefik:/data:Z
+Secret=cf_api_token,type=env,target=CF_DNS_API_TOKEN
+Environment=TRAEFIK_API_DASHBOARD=false
+Environment=TRAEFIK_ENTRYPOINTS_websecure_ADDRESS=:8443
+Environment=TRAEFIK_PROVIDERS_FILE_DIRECTORY=/data/dynamic
+Environment=TRAEFIK_PROVIDERS_FILE_WATCH=true
+Environment=TRAEFIK_CERTIFICATESRESOLVERS_cf_ACME_EMAIL=${ALERT_EMAIL}
+Environment=TRAEFIK_CERTIFICATESRESOLVERS_cf_ACME_STORAGE=/data/acme.json
+Environment=TRAEFIK_CERTIFICATESRESOLVERS_cf_ACME_DNSCHALLENGE_PROVIDER=cloudflare
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

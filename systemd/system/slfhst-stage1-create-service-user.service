@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage1: create rootless-podman service user + admin user
+ConditionPathExists=!/var/lib/slfhst/stage1.done
+After=slfhst-stage1-wizard.service
+Before=slfhst-stage1-ssh-totp.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage1_create_service_user.py

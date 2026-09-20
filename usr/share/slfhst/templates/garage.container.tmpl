@@ -1,0 +1,19 @@
+# Garage: S3-compatible object storage backing Ente museum's blob storage,
+# bulk data on the SSD (/srv/data/garage). Single-node layout is bootstrapped
+# once by backing.py (garage layout assign/apply), not here.
+[Unit]
+Description=Garage (S3-compatible object storage)
+After=slfhst-network.network
+
+[Container]
+Image=docker.io/dxflrs/garage:v1.0.1
+AutoUpdate=registry
+Network=slfhst-network.network
+Volume=/srv/data/garage/meta:/var/lib/garage/meta:Z
+Volume=/srv/data/garage/data:/var/lib/garage/data:Z
+Volume=/srv/data/garage/garage.toml:/etc/garage.toml:Z,ro
+Secret=garage_rpc_secret,type=env,target=GARAGE_RPC_SECRET
+Secret=garage_admin_token,type=env,target=GARAGE_ADMIN_TOKEN
+
+[Service]
+Restart=always

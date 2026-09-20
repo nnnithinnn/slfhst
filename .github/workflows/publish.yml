@@ -1,0 +1,44 @@
+name: Publish bootc image
+
+# This is the "OS/tooling layer" lane from the plan doc (§9): every merge to
+# main republishes the bootc image, and each node's slfhst-bootc-update.timer
+# pulls it on its own schedule via `bootc upgrade`. App containers update
+# independently via podman-auto-update.timer -- this workflow never touches
+# that lane.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Byte-compile + import every slfhst module
+        run: python3 scripts/check.py
+      - name: Install podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Build
+        run: python3 scripts/build_image.py
+      - name: Tag
+        run: |
+          DATE_TAG="$(date -u +%Y%m%d)-${GITHUB_SHA::12}"
+          podman tag localhost/slfhst:latest "$IMAGE:stable"
+          podman tag localhost/slfhst:latest "$IMAGE:$DATE_TAG"
+          echo "DATE_TAG=$DATE_TAG" >> "$GITHUB_ENV"
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push
+        run: |
+          podman push "$IMAGE:stable"
+          podman push "$IMAGE:$DATE_TAG"

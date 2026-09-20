@@ -1,0 +1,33 @@
+# Ente museum config, mounted read-only into the museum container.
+#
+# SCAFFOLD -- validate every key here against Ente's own museum.yaml.sample
+# before a real deploy (tracked as an open item in the plan doc); Ente's
+# self-host docs don't publish a stable schema reference we could confirm
+# programmatically, so this is a best-effort starting point, not gospel.
+db:
+  host: postgres
+  port: 5432
+  name: museum
+  user: museum
+  password: ${POSTGRES_PASSWORD}
+
+s3:
+  are_local_buckets: true
+  b2-eu-cen:
+    key: museum
+    secret: ${GARAGE_ADMIN_TOKEN}
+    endpoint: http://garage:3900
+    region: garage
+    bucket: ente
+
+key:
+  encryption: ${ENTE_ENCRYPTION_KEY}
+  hash: ${ENTE_ENCRYPTION_HASH_KEY}
+
+jwt:
+  secret: ${ENTE_JWT_SECRET}
+
+apps:
+  public-albums: https://albums.${DOMAIN}
+  cast: https://cast.${DOMAIN}
+  accounts: https://accounts.${DOMAIN}

@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage2: sanity check + MOTD
+ConditionPathExists=!/var/lib/slfhst/stage2.done
+After=slfhst-stage2-dns-sync.service
+Before=slfhst-stage2-done.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage2_healthcheck.py

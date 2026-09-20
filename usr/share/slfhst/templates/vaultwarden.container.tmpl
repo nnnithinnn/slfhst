@@ -1,0 +1,15 @@
+[Unit]
+Description=Vaultwarden
+After=slfhst-network.network
+
+[Container]
+Image=docker.io/vaultwarden/server:latest
+AutoUpdate=registry
+Network=slfhst-network.network
+Volume=/srv/data/vaultwarden:/data:Z
+Secret=vaultwarden_admin_token,type=env,target=ADMIN_TOKEN
+Environment=DOMAIN=https://${VAULT_HOST}
+Environment=SIGNUPS_ALLOWED=false
+
+[Service]
+Restart=always

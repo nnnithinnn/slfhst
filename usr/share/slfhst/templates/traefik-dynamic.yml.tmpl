@@ -1,0 +1,50 @@
+# Rendered to /srv/data/traefik/dynamic/traefik-dynamic.yml, watched by
+# Traefik's file provider. Backend ports below are the containers' documented
+# defaults as of the plan's research pass -- confirm against each project's
+# current docs before first real deploy (tracked as an open item).
+http:
+  routers:
+    mail:
+      rule: "Host(`${MAIL_HOST}`)"
+      entryPoints: [websecure]
+      service: bulwark
+      tls: {certResolver: cf}
+    vault:
+      rule: "Host(`${VAULT_HOST}`)"
+      entryPoints: [websecure]
+      service: vaultwarden
+      tls: {certResolver: cf}
+    photos:
+      rule: "Host(`${PHOTOS_HOST}`)"
+      entryPoints: [websecure]
+      service: ente-web-photos
+      tls: {certResolver: cf}
+    auth:
+      rule: "Host(`${AUTH_HOST}`)"
+      entryPoints: [websecure]
+      service: ente-web-auth
+      tls: {certResolver: cf}
+    locker:
+      rule: "Host(`${LOCKER_HOST}`)"
+      entryPoints: [websecure]
+      service: ente-web-locker
+      tls: {certResolver: cf}
+    api:
+      rule: "Host(`${API_HOST}`)"
+      entryPoints: [websecure]
+      service: museum
+      tls: {certResolver: cf}
+
+  services:
+    bulwark:
+      loadBalancer: {servers: [{url: "http://bulwark:3000"}]}
+    vaultwarden:
+      loadBalancer: {servers: [{url: "http://vaultwarden:80"}]}
+    ente-web-photos:
+      loadBalancer: {servers: [{url: "http://ente-web-photos:3000"}]}
+    ente-web-auth:
+      loadBalancer: {servers: [{url: "http://ente-web-auth:3003"}]}
+    ente-web-locker:
+      loadBalancer: {servers: [{url: "http://ente-web-locker:3009"}]}
+    museum:
+      loadBalancer: {servers: [{url: "http://museum:8080"}]}

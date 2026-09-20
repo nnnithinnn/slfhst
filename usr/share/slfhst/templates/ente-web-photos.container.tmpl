@@ -1,0 +1,14 @@
+[Unit]
+Description=Ente web -- Photos
+After=slfhst-network.network museum.service
+Requires=museum.service
+
+[Container]
+Image=ghcr.io/ente-io/web:latest
+AutoUpdate=registry
+Network=slfhst-network.network
+Environment=NEXT_PUBLIC_ENTE_ENDPOINT=https://${API_HOST}
+Environment=ENTE_APP=photos
+
+[Service]
+Restart=always

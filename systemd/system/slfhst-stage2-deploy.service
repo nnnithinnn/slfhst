@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage2: pull images and start the app stack
+ConditionPathExists=!/var/lib/slfhst/stage2.done
+After=slfhst-stage2-render-quadlets.service
+Before=slfhst-stage2-bootstrap-backing.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage2_deploy.py

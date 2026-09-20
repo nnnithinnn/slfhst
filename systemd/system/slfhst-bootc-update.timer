@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply pending bootc (OS/tooling layer) updates weekly
+# check-only status is already surfaced more often by slfhst-monitor.timer;
+# this is the actual hands-off "apply and reboot if needed" lane (plan §9),
+# kept weekly and jittered so it isn't a surprise at a predictable moment.
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

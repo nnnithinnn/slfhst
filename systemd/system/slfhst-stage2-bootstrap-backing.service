@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage2: bootstrap Garage layout/bucket/key
+ConditionPathExists=!/var/lib/slfhst/stage2.done
+After=slfhst-stage2-deploy.service
+Before=slfhst-stage2-dns-sync.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage2_bootstrap_backing.py

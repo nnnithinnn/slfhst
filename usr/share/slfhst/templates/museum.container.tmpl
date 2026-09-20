@@ -1,0 +1,22 @@
+# Ente "museum" backend (Photos/Auth/Locker API). Whether to pull a
+# published image or build from source is an open item (see plan doc) --
+# defaulting to a published image here; swap for a build stage if needed.
+[Unit]
+Description=Ente museum
+After=slfhst-network.network postgres.service garage.service
+Requires=postgres.service garage.service
+
+[Container]
+Image=ghcr.io/ente-io/server:latest
+AutoUpdate=registry
+Network=slfhst-network.network
+Volume=/srv/data/ente/museum.yaml:/museum.yaml:Z,ro
+Secret=postgres_password,type=env,target=DB_PASSWORD
+Secret=garage_admin_token,type=env,target=S3_SECRET_KEY
+Environment=DB_HOST=postgres
+Environment=DB_NAME=museum
+Environment=DB_USER=museum
+Environment=S3_ENDPOINT=http://garage:3900
+
+[Service]
+Restart=always

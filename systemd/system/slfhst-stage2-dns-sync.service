@@ -1,0 +1,10 @@
+[Unit]
+Description=slfhst stage2: sync DNS records via Cloudflare API
+ConditionPathExists=!/var/lib/slfhst/stage2.done
+After=slfhst-stage2-bootstrap-backing.service
+Before=slfhst-stage2-healthcheck.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage2_dns_sync.py

@@ -1,0 +1,29 @@
+name: CI
+
+# PR validation only. Push-to-main is covered by publish.yml, which runs
+# the same check as its first step before building+pushing -- having both
+# workflows trigger on push:main meant every push built the identical
+# image twice for no reason.
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Byte-compile + import every slfhst module
+        run: python3 scripts/check.py
+
+  build:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: podman build
+        run: python3 scripts/build_image.py

@@ -1,0 +1,12 @@
+[Unit]
+Description=slfhst stage1: partition/format/mount the bulk data disk
+# Idempotent: entire stage1 chain is a no-op once stage1.done exists, so the
+# image stays safe to reuse across reboots and repeat installs.
+ConditionPathExists=!/var/lib/slfhst/stage1.done
+After=local-fs.target
+Before=slfhst-stage1-network.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage1_detect_disks.py

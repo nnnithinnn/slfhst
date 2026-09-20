@@ -1,0 +1,25 @@
+# SMTP/IMAP/JMAP mail server. Ports are container-side unprivileged targets
+# that firewalld forwards the real privileged ports onto (see firewall.py) --
+# 25->2525, 465->4465, 587->4587, 143->4143, 993->4993, plus 4190 direct.
+[Unit]
+Description=Stalwart mail server
+After=slfhst-network.network
+
+[Container]
+Image=docker.io/stalwartlabs/mail-server:latest
+AutoUpdate=registry
+Network=slfhst-network.network
+PublishPort=2525:2525
+PublishPort=4465:4465
+PublishPort=4587:4587
+PublishPort=4143:4143
+PublishPort=4993:4993
+PublishPort=4190:4190
+Volume=/srv/data/stalwart:/opt/stalwart-mail:Z
+Environment=STALWART_HOSTNAME=${MAIL_HOST}
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

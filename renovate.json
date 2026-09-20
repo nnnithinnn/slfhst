@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dockerfile": {
+    "fileMatch": ["^Containerfile$"]
+  },
+  "customManagers": [
+    {
+      "description": "Bump pinned Image= lines in Quadlet templates (AutoUpdate=registry already gives each running node its own independent lane -- this keeps the repo's own defaults from drifting far behind too).",
+      "customType": "regex",
+      "fileMatch": ["^usr/share/slfhst/templates/.+\\.container\\.tmpl$"],
+      "matchStrings": ["Image=(?<depName>[^:\\s]+):(?<currentValue>\\S+)\\s"],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Bump the bootc-image-builder tag used by scripts/build_iso.py and docs.",
+      "customType": "regex",
+      "fileMatch": ["^scripts/build_iso\\.py$", "^README\\.md$"],
+      "matchStrings": ["quay\\.io/centos-bootc/bootc-image-builder:(?<currentValue>\\S+)"],
+      "depNameTemplate": "quay.io/centos-bootc/bootc-image-builder",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "bootc base image"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    }
+  ]
+}
