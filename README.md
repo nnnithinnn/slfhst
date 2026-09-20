@@ -90,14 +90,24 @@ git tag v0.1.0 && git push origin v0.1.0
 registry reference (not local podman storage -- see `scripts/build_iso.py`'s
 docstring for why: GitHub Actions' podman is rootless by default, so a
 locally-built image never lands where bootc-image-builder looks for it),
-and attaches the ISO to a new GitHub Release for the tag as a single
-asset. Can also be run manually via `workflow_dispatch` without a new tag.
+and publishes a GitHub Release for the tag. Can also be run manually via
+`workflow_dispatch` without a new tag.
 
-GitHub caps a single release asset at 2GiB. `scripts/publish_release.py`
-deliberately does **not** split the ISO to work around that -- it fails
-loudly instead if the ISO is ever at/over the limit, so that stays
-visible and gets fixed at the source (more debloat, or a different
-distribution path) rather than quietly working around it.
+The ISO itself (~2.8GB) is over GitHub's 2GiB release-asset limit, and
+debloating the appliance image doesn't help -- that 2.8GB is dominated by
+Anaconda's own live installer environment (needed to run the installer
+itself before our deployed OS exists), which is fixed-size and not
+something bootc-image-builder exposes any way to configure. So instead of
+a release asset, the ISO is pushed to GHCR as a plain OCI artifact via
+[`oras`](https://oras.land/) (`ghcr.io/<owner>/slfhst-iso:vX.Y.Z`, no size
+limit there) and the release notes link to it:
+```
+oras pull ghcr.io/<owner>/slfhst-iso:v0.1.0
+```
+`scripts/publish_release.py` deliberately does not split or compress the
+ISO to fit GitHub's asset limit instead -- if this ever needs revisiting
+(e.g. GHCR turns out not to fit the deployment story), that should be a
+visible decision, not a silent workaround.
 
 ## Image size
 

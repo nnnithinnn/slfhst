@@ -6,10 +6,12 @@ name: Release ISO
 # wasteful. This only runs for an actual release: push a `vX.Y.Z` tag, or
 # trigger it manually.
 #
-# NOTE: not yet verified end-to-end on GitHub-hosted runners in this repo --
-# bootc-image-builder needs privileged/loop-device access, which works on
-# standard ubuntu-latest runners for other bootc projects, but watch the
-# first real run.
+# Verified end-to-end on a real GitHub-hosted runner -- see git history for
+# the fixes that took (rootful bootc-image-builder invocation, storage
+# mount/pull semantics, a runner storage-driver workaround, pointing dnf at
+# repo.almalinux.org directly, and publishing the ISO as a GHCR OCI
+# artifact via oras instead of a GitHub release asset since it doesn't fit
+# GitHub's 2GiB asset limit).
 on:
   push:
     tags: ["v*"]
@@ -25,12 +27,15 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  ISO_IMAGE: ghcr.io/${{ github.repository }}-iso
 
 jobs:
   release-iso:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: oras-project/setup-oras@v1
 
       # ubuntu-latest ships ~14GB free by default, most of it eaten by
       # preinstalled toolchains this job never touches (.NET, Android SDK,
@@ -82,6 +87,7 @@ jobs:
           podman tag localhost/slfhst:latest "$IMAGE:$TAG"
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
           podman push "$IMAGE:$TAG"
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Disk space before ISO build
         run: df -h /
@@ -115,12 +121,13 @@ jobs:
           ls -lh "$ISO_PATH"
 
       # GitHub hard-caps a single release asset at 2GiB ("size must be less
-      # than 2147483648") -- confirmed by hitting it for real. Anaconda ISOs
-      # are mostly already-compressed content (squashfs, OCI layers), so
-      # re-compressing wouldn't reliably buy enough margin; publish_release.py
-      # splits into fixed-size parts instead, which is size-agnostic-safe,
-      # and only does so when actually needed (single asset otherwise).
-      - name: Publish GitHub Release with ISO asset
-        run: python3 scripts/publish_release.py --tag "$TAG" --image "$IMAGE:$TAG" --iso-path "$ISO_PATH" --repo "${{ github.repository }}"
+      # than 2147483648") -- confirmed by hitting it for real, and debloating
+      # the appliance image doesn't help (the ISO's size is dominated by
+      # Anaconda's own live installer environment, not our embedded image).
+      # publish_release.py pushes the ISO to GHCR as an OCI artifact via
+      # oras instead (no such size limit there) and links to it from the
+      # release notes, rather than attaching it as a release asset.
+      - name: Publish release (GHCR OCI artifact + GitHub Release notes)
+        run: python3 scripts/publish_release.py --tag "$TAG" --image "$IMAGE:$TAG" --iso-path "$ISO_PATH" --iso-repo "$ISO_IMAGE" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

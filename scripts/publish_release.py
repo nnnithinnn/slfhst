@@ -1,42 +1,49 @@
 #!/usr/bin/python3
-"""Publish a GitHub Release for a built ISO as a single asset.
+"""Publish a release: push the built ISO to GHCR as an OCI artifact (via
+oras), then create a GitHub Release whose notes link to it -- not attached
+as a release asset.
 
 GitHub hard-caps a single release asset at 2GiB ("size must be less than
-2147483648", confirmed by hitting it for real before the image was
-debloated -- see git history). Deliberately not splitting into parts:
-fails loudly instead if the ISO is ever over the limit again, so that's
-visible and addressed (further debloat, or a different distribution path)
-rather than silently working around it.
+2147483648", confirmed by hitting it for real), and the ISO is over that
+regardless of how debloated the appliance image is (the Anaconda live
+installer environment dominates the ISO's size, and that's not something
+bootc-image-builder exposes any way to shrink -- see README). GHCR has no
+such practical limit, and pushing via `oras` needs the same GITHUB_TOKEN
+login already used for the container image, so this reuses that pattern
+rather than adding a new distribution dependency.
 """
 from __future__ import annotations
 
 import argparse
 import subprocess
-from pathlib import Path
-
-GITHUB_ASSET_LIMIT = 2_147_483_648
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--image", required=True)
-    parser.add_argument("--iso-path", required=True, type=Path)
-    parser.add_argument("--repo", required=True)
+    parser.add_argument("--image", required=True, help="bootc image ref, e.g. ghcr.io/owner/slfhst:v0.1.0")
+    parser.add_argument("--iso-path", required=True)
+    parser.add_argument("--iso-repo", required=True, help="GHCR repo for the ISO artifact, e.g. ghcr.io/owner/slfhst-iso")
+    parser.add_argument("--repo", required=True, help="owner/repo for the GitHub Release")
     args = parser.parse_args()
 
-    size = args.iso_path.stat().st_size
-    if size >= GITHUB_ASSET_LIMIT:
-        raise SystemExit(
-            f"{args.iso_path} is {size / 1e9:.2f}GB, at/over GitHub's 2GiB "
-            "release-asset limit. Not splitting (by design) -- debloat the "
-            "image further or pick a different distribution path."
-        )
+    iso_ref = f"{args.iso_repo}:{args.tag}"
+    subprocess.run(
+        ["oras", "push", iso_ref, f"{args.iso_path}:application/vnd.slfhst.iso"],
+        check=True,
+    )
 
-    notes = f"Bootc image: `{args.image}`. Generic Anaconda installer ISO -- see README for the first-boot wizard flow.\n"
+    notes = (
+        f"Bootc image: `{args.image}`.\n\n"
+        f"Anaconda installer ISO (published as a GHCR OCI artifact, not a "
+        f"release asset -- GitHub's 2GiB release-asset limit doesn't fit "
+        f"this ISO, GHCR has no such limit):\n"
+        f"```\noras pull {iso_ref}\n```\n"
+        f"See README for the first-boot wizard flow.\n"
+    )
 
     subprocess.run(
-        ["gh", "release", "create", args.tag, str(args.iso_path),
+        ["gh", "release", "create", args.tag,
          "--title", f"slfhst {args.tag}",
          "--notes", notes,
          "--repo", args.repo],
