@@ -24,8 +24,17 @@
 # a real local build before trusting this blindly.
 FROM localhost/slfhst:latest
 
+# --kver is required, not cosmetic: dracut defaults to building an
+# initramfs for the CURRENTLY RUNNING kernel, which inside a container
+# build means the build host's own kernel (e.g. a GitHub Actions runner's
+# "6.17.0-1022-azure"), not the kernel actually installed in this image --
+# confirmed by a real CI failure ("Cannot find module directory" /lib/
+# modules/<host-kernel-version> doesn't exist in here). /lib/modules
+# has exactly one entry: whatever kernel RPM the almalinux-bootc base
+# image installed.
 RUN dnf -y install dracut-live squashfs-tools && \
-    dracut --force --add dmsquash-live && \
+    KVER="$(ls /lib/modules | head -n1)" && \
+    dracut --force --add dmsquash-live --kver "$KVER" && \
     dnf clean all
 
 # The appliance image itself, embedded as a local oci-archive so
