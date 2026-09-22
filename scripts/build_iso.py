@@ -6,7 +6,7 @@ that's verified.
 
 bootc-image-builder refuses to run under rootless podman at all ("this
 command must be run in rootful (not rootless) podman") -- discovered when
-release.yml's first real run failed on exactly this. So the actual
+publish.yml's first real ISO-building run failed on exactly this. So the actual
 bootc-image-builder invocation always runs via `sudo podman run`, no matter
 where --image comes from.
 

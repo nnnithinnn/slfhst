@@ -33,12 +33,10 @@ build/verify loop.
 - `scripts/` -- `build_image.py` (podman build), `build_iso.py` (qcow2 or
   anaconda-iso via bootc-image-builder), `check.py` (byte-compile + import
   every module, what CI runs first).
-- `.github/workflows/` -- `ci.yml` (check + build on every PR),
-  `publish.yml` (on merge to `main`, builds and pushes the bootc image to
-  GHCR as `:stable` + a dated tag -- what `slfhst-bootc-update.timer` tracks),
-  `release.yml` (on a `vX.Y.Z` tag or manual dispatch, builds+pushes a
-  versioned image and cuts the Anaconda installer ISO as a GitHub Release
-  asset -- see "Cutting a release" below).
+- `.github/workflows/` -- `ci.yml` (check + build on every PR), `publish.yml`
+  (on every merge to `main` -- or manual dispatch -- builds+pushes the bootc
+  image to GHCR **and** builds+republishes the Anaconda installer ISO from
+  that exact image, together, every time -- see "Publishing" below).
 - `renovate.json` -- bumps the bootc base image, pinned Quadlet template
   tags, and GitHub Actions versions via PR.
 
@@ -48,8 +46,12 @@ build/verify loop.
   Bulwark): Quadlets use `AutoUpdate=registry`; `podman-auto-update.timer`
   re-pulls newer digests for the same tag daily. No CI round-trip needed.
 - **OS + slfhst tooling itself**: Renovate PRs bump the Containerfile;
-  `publish.yml` republishes the bootc image on merge; each node's
-  `slfhst-bootc-update.timer` runs `bootc upgrade --apply` weekly.
+  `publish.yml` republishes the bootc image (and the ISO built from it,
+  see "Publishing" below) on every merge; each already-running node's
+  `slfhst-bootc-update.timer` runs `bootc upgrade --apply` weekly. A fresh
+  offline install instead gets the current OS/tooling straight from
+  whatever ISO it booted -- no post-install network round-trip needed for
+  that part.
 
 ## Build / verify loop
 
@@ -68,30 +70,31 @@ Reboot mid-stage1/stage2 to confirm the `ConditionPathExists` gating makes
 both stages idempotent -- no re-prompt, no re-partition, services just
 restart.
 
-## Cutting a release
+## Publishing
 
-Tags are plain [semver](https://semver.org/): `vMAJOR.MINOR.PATCH`.
-- **PATCH**: backward-compatible fixes (a stage1/stage2 bug, a quadlet
-  template correction, a CI fix that doesn't change behavior).
-- **MINOR**: backward-compatible additions (a new `slfhst` subcommand, a
-  new service in the stack, a new supported deployment option).
-- **MAJOR**: breaking changes to the first-boot flow, the on-disk layout,
-  or anything that makes an existing deployment's state incompatible.
+One workflow, one rule: **if we build something, we build everything.**
+Every push to `main` (or a manual `workflow_dispatch`) builds the
+appliance image *and* the Anaconda installer ISO from that exact image, in
+the same run, and republishes both -- there's no separate, semver-tag-gated
+"cut a release" step any more. That's deliberate: installs happen fully
+offline (see the build/verify loop above), so an ISO embedding a stale
+image isn't just outdated, it's the thing an offline install actually
+boots -- keeping the image build and the ISO build in one run is what
+guarantees they always match, rather than drifting apart between whenever
+someone remembered to tag a release.
 
-Still `0.x.y` (pre-1.0): the interface can still change; see Open items
-below for what's not settled yet.
+The pipeline (`publish.yml`): build the appliance image -> push it to GHCR
+as `:stable` + a dated tag (what `slfhst-bootc-update.timer` on
+already-running nodes tracks) -> build the Anaconda ISO from that exact
+just-pushed dated tag, not `:stable` (so a concurrent push can't move the
+image out from under a slower ISO build) -> publish it as the single
+rolling `latest` GitHub Release, replacing whatever ISO was there before
+(`scripts/publish_release.py` deletes-then-recreates the `latest` release
+each run, since `gh release create` refuses to reuse an existing tag).
 
-```
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-`release.yml` then builds the appliance image, pushes it to GHCR as
-`ghcr.io/<owner>/slfhst:v0.1.0`, builds the Anaconda ISO from *that*
-registry reference (not local podman storage -- see `scripts/build_iso.py`'s
-docstring for why: GitHub Actions' podman is rootless by default, so a
-locally-built image never lands where bootc-image-builder looks for it),
-and publishes a GitHub Release for the tag. Can also be run manually via
-`workflow_dispatch` without a new tag.
+Git tags aren't part of this any more -- tag something yourself
+(`git tag v0.2.0 && git push origin v0.2.0`) if you want a bookkeeping
+checkpoint, but CI doesn't react to it either way.
 
 The ISO ships as a direct GitHub Release asset. Its size has varied
 meaningfully between real builds so far -- ~942MB (v0.1.0, EL9) and
