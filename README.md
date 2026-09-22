@@ -182,13 +182,14 @@ the added complexity -- not attempted here.
 - `kickstart/generic.ks` hardcodes `ignoredisk --only-use=/dev/vda`
   (2026-09-22, corrected from an earlier, now-disproven claim that
   `autopart --type=plain` alone guaranteed single-disk use -- a real
-  install showed it partitioning both disks). This assumes virtio-blk
-  device naming (`vda`/`vdb`, ...), which covers the real KVM/VPS targets
-  this image is built for, but isn't universal -- a target using NVMe
-  naming (`nvme0n1`) or a different virtualization stack would need this
-  line changed. Revisit if/when a non-virtio target actually matters,
-  rather than trying to re-generalize this preemptively (the last three
-  attempts at a fully generic version all failed against real installs).
+  install showed it partitioning both disks). Confirmed correct for the
+  real target, not just assumed: GreenCloudVPS always attaches the
+  small/fast disk as `vda` first and the bulk disk as `vdb` on multi-disk
+  plans. A different provider or a non-virtio device naming scheme
+  (`nvme0n1`, ...) would need this line changed -- revisit only if/when
+  that actually happens, rather than re-generalizing preemptively (the
+  last three attempts at a fully generic version all failed against real
+  installs).
 - Image tags are now pinned (2026-09-22 pass): `stalwartlabs/stalwart:v0.16.20`,
   `vaultwarden/server:1.37.2`, `bulwarkmail/webmail:1.10.0`,
   `dxflrs/garage:v1.0.1`, `postgres:16-alpine`, `traefik:v3.3`. Ente's

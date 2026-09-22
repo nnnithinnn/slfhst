@@ -19,11 +19,11 @@
 #   pykickstart has no declarative "pick the smallest/non-rotational disk"
 #   predicate to fall back on. With %pre confirmed non-functional in this
 #   pipeline (two real failures) and no generic alternative, /dev/vda is
-#   the pragmatic call: it's the standard virtio-blk device-naming
-#   convention on KVM/VPS hosts (confirmed by this same real install's own
-#   log) and matches every real deployment target this image is actually
-#   built for. If a target box ever doesn't use virtio-blk naming, this is
-#   the line to change -- flagged, not hidden.
+#   the pragmatic call -- and confirmed correct for the real target, not
+#   just assumed: GreenCloudVPS always attaches the small/fast disk as
+#   vda first and the bulk disk as vdb, consistently, on multi-disk plans.
+#   If a target provider ever attaches disks in a different order or uses
+#   non-virtio naming (nvme0n1, ...), this is the line to change.
 # - Accounts: still zero real credentials baked in (all per-deployment
 #   account setup is stage1's job, see systemd/system/slfhst-stage1*), but
 #   the throwaway account Anaconda's non-interactive mode requires to exist

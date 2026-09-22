@@ -52,6 +52,14 @@ def _copy_local_image_to_rootful_storage(image: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tarball = Path(tmp) / "image.tar"
         subprocess.run(["podman", "save", "-o", str(tarball), image], check=True)
+        # `podman load` failed as the FIRST command to ever touch a fresh
+        # rootful storage (right after storage.conf gets (re)written) with
+        # "database graph driver \"\" does not match our graph driver
+        # \"overlay\": database configuration mismatch" -- a `load` alone
+        # doesn't reliably initialize storage's own driver-tracking DB the
+        # way a plain read command does. `podman info` first forces that
+        # initialization to happen with the driver correctly recorded.
+        subprocess.run(["sudo", "podman", "info"], check=True, capture_output=True)
         subprocess.run(["sudo", "podman", "load", "-i", str(tarball)], check=True)
 
 
