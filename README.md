@@ -93,27 +93,32 @@ locally-built image never lands where bootc-image-builder looks for it),
 and publishes a GitHub Release for the tag. Can also be run manually via
 `workflow_dispatch` without a new tag.
 
-The ISO ships as a direct GitHub Release asset -- measured at ~942MB for a
-real build, comfortably under GitHub's 2GiB single-asset limit.
+The ISO ships as a direct GitHub Release asset. Its size has varied
+meaningfully between real builds so far -- ~942MB (v0.1.0, EL9) and
+~1.63GB (v0.1.1, EL10 + more debloat, where the appliance image itself is
+*smaller*) -- both comfortably under GitHub's 2GiB limit, but with enough
+swing that it shouldn't be assumed stable. `scripts/publish_release.py`
+fails loudly rather than silently splitting/compressing if a future
+build ever actually exceeds the limit, so that stays a visible decision
+if it happens rather than a silent break.
 
-That measurement is worth spelling out, since the ISO's structure isn't
-obvious: mounting a real built ISO shows an Anaconda live installer
-environment (`images/install.img`, ~1.13GB -- the actual Anaconda
-installer UI, kernel, and its own temporary root filesystem, needed to
-run the installer before our deployed OS exists) *and* our own appliance
-image embedded directly (`container/blobs/...`, ~1.17GB), which sums to
-~2.6GB on paper -- yet the real ISO file is under a gigabyte. The
-difference is content-level deduplication (composefs/ostree's
-content-addressed storage): our image and Anaconda's own live environment
-are both built from overlapping AlmaLinux packages and share a large
-amount of identical file content, so the actual unique bytes on disc are
-far less than the sum of the two logical sizes. None of this is
-`bootc-image-builder` or AlmaLinux doing anything wrong -- an Anaconda
-live environment of roughly this size is standard for any Anaconda-based
-installer, and it isn't configurable via anything `bootc-image-builder`
-exposes. `scripts/publish_release.py` fails loudly rather than silently
-splitting/compressing if a future build ever grows past the limit, so
-that stays a visible decision.
+The ISO's structure, from mounting real builds: an Anaconda live
+installer environment (`images/install.img` -- the actual installer UI,
+kernel, and its own temporary root filesystem, needed to run the
+installer before our deployed OS exists) plus our own appliance image
+embedded directly (`container/blobs/...`). For v0.1.1 those two plus the
+initrd/kernel/EFI boot images summed to almost exactly the real file
+size (~1.6GB logical vs ~1.63GB actual) -- no surprises. For v0.1.0 the
+same accounting summed to ~2.3GB logical against a ~942MB actual file, a
+gap large enough that it's most likely sparse-file allocation in how
+bootc-image-builder sizes the composefs/erofs images varying between
+builds, not a stable, reproducible saving -- flagged here as an
+open question rather than a confidently-explained mechanism, since a
+second measurement contradicted the first attempt at explaining it.
+None of this is `bootc-image-builder` or AlmaLinux doing anything wrong
+either way -- an Anaconda live environment of roughly this size is
+standard for any Anaconda-based installer, and its size isn't
+configurable via anything `bootc-image-builder` exposes.
 
 ## Image size
 
