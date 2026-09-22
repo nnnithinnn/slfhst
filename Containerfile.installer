@@ -33,28 +33,35 @@ FROM localhost/slfhst:latest
 # has exactly one entry: whatever kernel RPM the almalinux-bootc base
 # image installed.
 #
-# The base image's own /usr/lib/dracut/dracut.conf.d/30-bootc-standard.conf
-# force-enables dracut's lvm/crypt/clevis modules (needed for the REAL
-# appliance's own boot -- see the main Containerfile's comment on
-# deliberately not removing lvm2/cryptsetup/clevis) but the actual clevis
-# dracut MODULE FILES aren't installed, so a real `--force` rebuild fails
-# ("Module 'clevis' cannot be found", then "Module 'clevis-pin-tpm2'
-# cannot be installed" once the first was omitted -- a real whack-a-mole
-# across two CI runs, not guessed preemptively). This installer's
-# live-boot squashfs is apparently the first thing to ever force dracut
-# to run inside this image directly (ostree/bootc regenerates the REAL
-# appliance's initramfs at deploy time, not at container-build time, so
-# this gap never previously surfaced).
+# The base image ships several /usr/lib/dracut/dracut.conf.d/*.conf files
+# that force-enable lvm/crypt/fips/tpm2-tss/clevis modules for the REAL
+# appliance's own boot (see the main Containerfile's comment on
+# deliberately not removing lvm2/cryptsetup/clevis) -- but the actual
+# clevis dracut MODULE FILES aren't installed, so a real `--force` rebuild
+# fails. Found by actually pulling and inspecting the real base image
+# locally (`podman run --rm quay.io/almalinuxorg/almalinux-bootc:10 ... ls
+# /usr/lib/dracut/dracut.conf.d/`) after two rounds of CI whack-a-mole
+# ("Module 'clevis' cannot be found", then 'clevis-pin-tpm2' once the
+# first conf file was removed) made clear there was more than one file
+# involved -- rather than keep guessing, verify directly. The exact three
+# files declaring the modules this installer doesn't need:
+#   30-bootc-standard.conf : lvm crypt fips
+#   49-bootc-tpm2-tss.conf : tpm2-tss
+#   50-bootc-clevis.conf   : clevis clevis-pin-tpm2
+# This installer's live-boot squashfs is apparently the first thing to
+# ever force dracut to run inside this image directly (ostree/bootc
+# regenerates the REAL appliance's initramfs at deploy time, not at
+# container-build time, so this gap never previously surfaced).
 #
-# The installer needs none of LVM/LUKS/clevis at all -- plain GPT
+# The installer needs none of LVM/LUKS/TPM/clevis at all -- plain GPT
 # partitions only (installer_disks.py), no encrypted root, throwaway
-# live environment -- so rather than keep omitting individual clevis
-# submodules one at a time, drop the whole conf file for this rebuild:
-# it's tuned for the real appliance's boot requirements, none of which
-# apply here, and this only affects the installer image's own layer, not
-# the real appliance image underneath it.
+# live environment -- so dropping these three conf files is correct, not
+# a workaround, and only affects the installer image's own layer, not the
+# real appliance image underneath it.
 RUN dnf -y install dracut-live squashfs-tools && \
-    rm -f /usr/lib/dracut/dracut.conf.d/30-bootc-standard.conf && \
+    rm -f /usr/lib/dracut/dracut.conf.d/30-bootc-standard.conf \
+          /usr/lib/dracut/dracut.conf.d/49-bootc-tpm2-tss.conf \
+          /usr/lib/dracut/dracut.conf.d/50-bootc-clevis.conf && \
     KVER="$(ls /lib/modules | head -n1)" && \
     dracut --force --add dmsquash-live --kver "$KVER" && \
     dnf clean all
