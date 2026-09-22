@@ -143,6 +143,30 @@ RUN dnf -y remove \
         libsss_certmap libsss_idmap libsss_nss_idmap libsss_sudo libipa_hbac \
         stalld flatpak-session-helper avahi-libs nano
 
+# --- Third debloat pass: AlmaLinux 10 splits firmware into many per-vendor
+# packages instead of EL9's one monolithic linux-firmware -- removing
+# linux-firmware above doesn't touch these, they're entirely separate
+# packages. Same rationale as the linux-firmware decision above (explicit
+# call for this VPS deployment target): a VPS has no NVIDIA/AMD/Intel GPU,
+# no WiFi chipset (atheros/mt7xxx/brcmfmac/realtek/tiwilink/nxpwireless),
+# and no need for the audio codec firmware either. amd-ucode-firmware is
+# CPU microcode, which a VM guest doesn't load itself anyway (the host
+# hypervisor owns that). linux-firmware-whence is just a license/attribution
+# index for firmware blobs we no longer ship. All confirmed zero
+# dependents via `rpm -q --whatrequires` (linux-firmware-whence is
+# required only by these same firmware packages, so it cascades away
+# cleanly in this one transaction). ~257MB.
+#
+# sos (sysreport/diagnostic collection) and btrfs-progs (we use XFS only,
+# see disks.py): also confirmed zero dependents. ~11MB combined.
+RUN dnf -y remove \
+        nvidia-gpu-firmware atheros-firmware amd-gpu-firmware \
+        mt7xxx-firmware brcmfmac-firmware intel-gpu-firmware \
+        realtek-firmware tiwilink-firmware intel-audio-firmware \
+        cirrus-audio-firmware nxpwireless-firmware amd-ucode-firmware \
+        linux-firmware-whence \
+        sos btrfs-progs
+
 # --- Base tooling ------------------------------------------------------------
 # python3 ships in the AlmaLinux bootc base already -- everything under
 # usr/libexec/slfhst/ and usr/bin/slfhst is Python (stdlib only, no pip
