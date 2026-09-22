@@ -9,7 +9,7 @@ import getpass
 import re
 
 from . import common
-from .common import log, run
+from .common import ask, banner, log, run
 
 VALID_PUBKEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-\S+) \S+")
 VALID_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -33,41 +33,17 @@ FILE_SECRET_KEYS = (
 )
 
 
-def _ask(prompt: str, *, default: str | None = None, validate=None, required: bool = True) -> str:
-    suffix = f" [{default}]" if default else ""
-    while True:
-        value = input(f"{prompt}{suffix}: ").strip()
-        if not value and default is not None:
-            value = default
-        if not value and not required:
-            return ""
-        if not value:
-            print("  required.")
-            continue
-        if validate and not validate(value):
-            print("  doesn't look right, try again.")
-            continue
-        return value
-
-
-def _banner(text: str) -> None:
-    print()
-    print("=" * 70)
-    print(text)
-    print("=" * 70)
-
-
 def run_wizard() -> dict:
-    _banner("slfhst first-boot setup")
+    banner("slfhst first-boot setup")
     print("This box will become a self-hosted mail + photos/auth/locker + vault")
     print("appliance. Answers below are only asked once.\n")
 
-    hostname = _ask("Hostname (short, e.g. box1)")
-    domain = _ask("Domain (must already be on Cloudflare)", validate=lambda v: VALID_DOMAIN_RE.match(v))
-    admin_user = _ask("Admin username", default="admin")
-    pubkey = _ask("Admin SSH public key (paste the full line)", validate=lambda v: VALID_PUBKEY_RE.match(v))
-    alert_email = _ask("Email address for alerts (delivered via this box's own mail server)",
-                        validate=lambda v: VALID_EMAIL_RE.match(v))
+    hostname = ask("Hostname (short, e.g. box1)")
+    domain = ask("Domain (must already be on Cloudflare)", validate=lambda v: VALID_DOMAIN_RE.match(v))
+    admin_user = ask("Admin username", default="admin")
+    pubkey = ask("Admin SSH public key (paste the full line)", validate=lambda v: VALID_PUBKEY_RE.match(v))
+    alert_email = ask("Email address for alerts (delivered via this box's own mail server)",
+                       validate=lambda v: VALID_EMAIL_RE.match(v))
 
     print("\nCloudflare API token (Zone:DNS Edit scope for the domain above).")
     print("Input is hidden.")
@@ -93,7 +69,7 @@ def run_wizard() -> dict:
     print("\nPer-service secrets: leave blank to auto-generate (recommended).")
     for key in SECRET_KEYS:
         label = key.replace("_", " ")
-        value = _ask(f"{label} (blank = auto-generate)", required=False)
+        value = ask(f"{label} (blank = auto-generate)", required=False)
         cfg[key] = value or common.gen_secret()
 
     # No prompts for these -- always auto-generated, never worth typing.
@@ -104,7 +80,7 @@ def run_wizard() -> dict:
 
     run(["hostnamectl", "set-hostname", hostname])
 
-    _banner("Setup captured. Continuing automatically (stage 2 will pull up services).")
+    banner("Setup captured. Continuing automatically (stage 2 will pull up services).")
     return cfg
 
 

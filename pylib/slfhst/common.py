@@ -86,3 +86,32 @@ def update_config(**kv) -> dict:
 
 def gen_secret(nbytes: int = 24) -> str:
     return secrets.token_urlsafe(nbytes)
+
+
+# --- Shared interactive-console prompt helpers ------------------------------
+# Used by any stage1 step that takes over the console tty (wizard.py,
+# netconf.py) -- one implementation of "ask a question, validate, retry"
+# rather than each script rolling its own.
+
+def ask(prompt: str, *, default: str | None = None, validate=None, required: bool = True) -> str:
+    suffix = f" [{default}]" if default else ""
+    while True:
+        value = input(f"{prompt}{suffix}: ").strip()
+        if not value and default is not None:
+            value = default
+        if not value and not required:
+            return ""
+        if not value:
+            print("  required.")
+            continue
+        if validate and not validate(value):
+            print("  doesn't look right, try again.")
+            continue
+        return value
+
+
+def banner(text: str) -> None:
+    print()
+    print("=" * 70)
+    print(text)
+    print("=" * 70)
