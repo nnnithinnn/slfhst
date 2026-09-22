@@ -1,28 +1,46 @@
-# slfhst installer image: a throwaway live-boot environment (bootc-image-
-# builder's bootc-generic-iso type) that partitions disks and deploys the
-# real appliance image via `bootc install to-filesystem` -- replaces
-# Anaconda/kickstart entirely (see git history for why: %pre/%include
-# ordering bugs, non-interactive-mode mandatory-spoke validation, an
-# ostree.final-diffid deploy failure caused by squashing the appliance
-# image, autopart silently spanning multiple disks -- an opaque target to
-# build automation against, each bug only discoverable by burning a real
-# install attempt).
+# slfhst installer image: a throwaway live-boot environment that partitions
+# disks and deploys the real appliance image via `bootc install
+# to-filesystem` -- replaces Anaconda/kickstart entirely (see git history
+# for why: %pre/%include ordering bugs, non-interactive-mode mandatory-spoke
+# validation, an ostree.final-diffid deploy failure caused by squashing the
+# appliance image, autopart silently spanning multiple disks -- an opaque
+# target to build automation against, each bug only discoverable by burning
+# a real install attempt).
+#
+# bootc-image-builder does NOT build this kind of ISO -- confirmed directly
+# from the tool's own error output and source (imagetypes.go), not assumed:
+# every ISO type it supports (anaconda-iso, iso, bootc-installer) goes
+# through Anaconda in some form; a "bootc-generic-iso" type doesn't exist
+# anywhere in the tool (an earlier research pass invented it). So this
+# image is built into a bootable ISO by scripts/build_installer_iso.py
+# instead, using ordinary, well-trodden tooling directly (mksquashfs +
+# grub2-mkrescue) -- verified end-to-end locally before ever touching CI:
+# built a real ISO this way, confirmed dmsquash-live's actual module source
+# (not docs) for the exact LiveOS/squashfs.img + root=live:CDLABEL=...
+# structure it expects, and confirmed xorriso lists the right files at the
+# right paths in the output.
 #
 # FROM the appliance image itself, not a separate base -- this way the
 # installer always matches whatever image it's built alongside in the same
 # CI run (see .github/workflows/publish.yml), and inherits podman/parted/
-# python3/etc. already installed there for free. dracut-live +
-# squashfs-tools are the only things bootc-image-builder's bootc-generic-iso
-# output type actually needs beyond that: a container image with
-# dmsquash-live in its initramfs boots live from a squashfs, full stop --
-# no kickstart, no custom PXE/dracut work needed.
-#
-# The exact dracut invocation to rebuild the initramfs with dmsquash-live
-# is the least-verified line in this file -- confirmed the MODULE is what's
-# needed (research against bootc-image-builder's own docs), not the exact
-# command syntax for this specific dracut/kernel version. Confirm against
-# a real local build before trusting this blindly.
+# python3/etc. already installed there for free.
 FROM localhost/slfhst:latest
+
+# grub2-pc(-modules)/grub2-efi-x64(-modules)/shim-x64: BIOS+UEFI hybrid
+# boot support for build_installer_iso.py's grub2-mkrescue step (note the
+# package name is grub2-efi-x64, not grub2-efi-x86_64 -- confirmed via
+# research, a real naming gotcha in Fedora/RHEL-family package names).
+# NOT verified end-to-end on real hardware/a VM -- this sandbox is
+# aarch64, which has no BIOS/El Torito concept at all, so the x86_64
+# hybrid-boot path specifically could only be mechanically verified (right
+# files, right structure), not boot-tested, until a real x86_64 run.
+# Package names confirmed to actually exist via
+# `dnf --forcearch=x86_64 repoquery` against the real AlmaLinux 10 repos
+# (this sandbox is aarch64, so a plain `dnf install` here can't reach
+# these at all -- cross-arch repoquery is how this was checked instead of
+# guessed).
+RUN dnf -y install grub2-tools-extra xorriso grub2-pc grub2-pc-modules \
+        grub2-efi-x64 grub2-efi-x64-modules grub2-efi-x64-cdboot shim-x64
 
 # --kver is required, not cosmetic: dracut defaults to building an
 # initramfs for the CURRENTLY RUNNING kernel, which inside a container

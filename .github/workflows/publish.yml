@@ -7,18 +7,24 @@ name: Publish
 # of it (Containerfile.installer -- a live, kickstart-free environment
 # that partitions disks and `bootc install`s the appliance image, see that
 # file's own comment for why Anaconda is gone entirely). The ISO is built
-# straight from the installer image this same run just built locally
-# (build_iso.py's localhost/ path: podman save + sudo podman load into
-# rootful storage, no registry pull) -- so the ISO build has no network
-# dependency on this run's own GHCR push succeeding first, and can't end
-# up embedding a different appliance image than what GHCR gets. GHCR still
-# gets the appliance image (not the installer image) afterward, for
-# already-running nodes' `bootc upgrade` to track.
+# straight from that local installer image via scripts/build_installer_iso.py
+# (mksquashfs + grub2-mkrescue, NOT bootc-image-builder -- confirmed that
+# tool can't produce this kind of ISO at all, see that script's docstring)
+# -- so the ISO build has no network dependency on this run's own GHCR
+# push succeeding first, and can't end up embedding a different appliance
+# image than what GHCR gets. GHCR still gets the appliance image (not the
+# installer image) afterward, for already-running nodes' `bootc upgrade`
+# to track.
 #
-# Verified end-to-end on a real GitHub-hosted runner -- see git history for
-# the fixes folded into the "Build image" step below (rootful bootc-image-
-# builder invocation, storage mount/pull semantics, a runner storage-driver
-# workaround, disk-space reclamation before a multi-GB ISO build).
+# Image-build steps verified end-to-end on a real GitHub-hosted runner --
+# see git history for the fixes folded into "Build image" below (rootful
+# bootc-image-builder invocation for qcow2, storage mount/pull semantics,
+# a runner storage-driver workaround, disk-space reclamation, three rounds
+# of dracut/dracut.conf.d fixes for the installer image). The ISO-build
+# step itself (mksquashfs + grub2-mkrescue) was verified locally on a
+# non-x86_64 dev machine before ever reaching CI -- see
+# build_installer_iso.py's docstring for exactly what that did and didn't
+# confirm; this specific run is the first real x86_64 test of it.
 on:
   push:
     branches: [main]
@@ -78,11 +84,10 @@ jobs:
           python3 scripts/build_installer_image.py
 
       # localhost/slfhst-installer:latest -- the image build_installer_image.py
-      # just produced, used directly (no GHCR round-trip). See
-      # build_iso.py's docstring for how it gets a rootless-podman-built
-      # local image into the rootful storage bootc-image-builder needs.
+      # just produced, used directly (no GHCR round-trip, no
+      # bootc-image-builder at all -- see build_installer_iso.py's docstring).
       - name: 3. Build ISO
-        run: python3 scripts/build_iso.py --type bootc-generic-iso --output output
+        run: python3 scripts/build_installer_iso.py --output output
 
       - name: Diagnose failure (memory/kernel log)
         if: failure()

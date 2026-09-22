@@ -36,9 +36,13 @@ build/verify loop.
   file's own comment for the full history of why (kickstart's `%pre`/
   `%include` ordering, non-interactive-mode mandatory-spoke validation, an
   `ostree.final-diffid` deploy failure, `autopart` spanning multiple disks:
-  each only discoverable by burning a real install attempt). Built via
-  bootc-image-builder's `bootc-generic-iso` type, which needs no kickstart
-  or config.toml customization at all.
+  each only discoverable by burning a real install attempt). Built into a
+  bootable ISO directly (mksquashfs + grub2-mkrescue, see
+  `scripts/build_installer_iso.py`) rather than via bootc-image-builder --
+  confirmed directly from that tool's own error output and source that it
+  can't produce this kind of ISO at all (every type it supports goes
+  through Anaconda in some form; a `bootc-generic-iso` type doesn't exist
+  in it despite an earlier research pass claiming otherwise).
 - `pylib/slfhst/installer_disks.py` / `installer_deploy.py` -- the
   installer's actual work: dynamic root+bulk disk selection (smallest
   non-rotational disk = root, largest = bulk -- genuinely dynamic now,
@@ -50,9 +54,11 @@ build/verify loop.
   deployment activation are genuine bootloader-time logic).
 - `scripts/` -- `build_image.py` (podman build the appliance image),
   `build_installer_image.py` (podman build the installer image, embedding
-  a copy of the appliance image), `build_iso.py` (qcow2 or
-  `bootc-generic-iso` via bootc-image-builder), `check.py` (byte-compile +
-  import every module, what CI runs first).
+  a copy of the appliance image), `build_iso.py` (qcow2 via
+  bootc-image-builder -- local dev iteration only), `build_installer_iso.py`
+  (the live installer ISO -- mksquashfs + grub2-mkrescue, no
+  bootc-image-builder), `check.py` (byte-compile + import every module,
+  what CI runs first).
 - `.github/workflows/` -- `ci.yml` (check + build on every PR), `publish.yml`
   (on every merge to `main` -- or manual dispatch -- builds+pushes the
   appliance image to GHCR **and** builds+republishes the live installer ISO,
@@ -121,12 +127,15 @@ python3 scripts/build_iso.py --type qcow2   # fast local iteration -- boots
 # `slfhst bootstrap`, confirm services come up, curl each subdomain + the
 # raw mail ports.
 
-python3 scripts/build_installer_image.py           # only once qcow2/stage1 verified
-python3 scripts/build_iso.py --type bootc-generic-iso   # then the real installer ISO
+python3 scripts/build_installer_image.py    # only once qcow2/stage1 verified
+python3 scripts/build_installer_iso.py      # then the real installer ISO
 # boot THIS in a VM with two differently-sized scratch disks attached --
 # the one thing genuinely new and unverified in this design is dynamic
 # disk selection landing on the right disk for each role. Confirm that
-# directly before trusting it on real hardware.
+# directly before trusting it on real hardware. Also the actual x86_64
+# BIOS+UEFI hybrid boot itself, if building on non-x86_64 hardware --
+# see build_installer_iso.py's docstring for exactly what was and wasn't
+# verified without one.
 ```
 
 Reboot mid-stage1 to confirm the `ConditionPathExists` gating makes it
@@ -151,16 +160,15 @@ drifting apart between whenever someone remembered to tag a release.
 Five steps (`publish.yml`), no more: **1. Precheck** (`check.py`) ->
 **2. Build image** (`podman build` the appliance image, then the installer
 image layered on top of it, both local only) -> **3. Build ISO**
-(`bootc-image-builder`'s `bootc-generic-iso` type, fed the *local*
-installer image directly -- no GHCR round-trip -- see `build_iso.py`'s
-docstring for how a rootless-podman-built local image gets into
-bootc-image-builder's required rootful storage) -> **4. Publish image**
-(the *appliance* image, not the installer image, pushed to GHCR as
-`:stable` + a dated tag -- what `slfhst-bootc-update.timer` on
-already-running nodes tracks) -> **5. Publish ISO** (the single rolling
-`latest` GitHub Release, replacing whatever ISO was there before --
-`scripts/publish_release.py` deletes-then-recreates it each run, since
-`gh release create` refuses to reuse an existing tag).
+(mksquashfs + grub2-mkrescue against the *local* installer image directly
+-- no GHCR round-trip, no bootc-image-builder at all -- see
+`build_installer_iso.py`'s docstring for why bootc-image-builder can't do
+this) -> **4. Publish image** (the *appliance* image, not the installer
+image, pushed to GHCR as `:stable` + a dated tag -- what
+`slfhst-bootc-update.timer` on already-running nodes tracks) -> **5. Publish
+ISO** (the single rolling `latest` GitHub Release, replacing whatever ISO
+was there before -- `scripts/publish_release.py` deletes-then-recreates it
+each run, since `gh release create` refuses to reuse an existing tag).
 
 Building the ISO from the local installer image rather than a GHCR
 reference isn't just simpler -- it means the ISO build has no network
@@ -177,11 +185,13 @@ The ISO ships as a direct GitHub Release asset, comfortably under GitHub's
 1.63GB). `scripts/publish_release.py` fails loudly rather than silently
 splitting/compressing if a future build ever actually exceeds the limit,
 so that stays a visible decision if it happens rather than a silent break.
-The `bootc-generic-iso` installer ISO's actual size hasn't been measured
-yet -- its structure is different from the old Anaconda-based ISO (no
-Anaconda live-installer environment; just the installer image converted
-to a squashfs, plus kernel/initrd/EFI boot files, plus the embedded
-appliance-image oci-archive) and likely smaller, but that's a prediction,
+This new live installer ISO's actual size hasn't been measured in CI
+yet (a ~1GB local test build exists, see `build_installer_iso.py`'s
+docstring) -- its structure is different from the old Anaconda-based ISO
+(no Anaconda live-installer environment; just the installer image
+converted to a squashfs, plus kernel/initrd/EFI boot files, plus the
+embedded appliance-image oci-archive) and likely smaller, but that's a
+prediction,
 not a measurement -- confirm against the first real build.
 
 ## Image size
@@ -223,25 +233,44 @@ the added complexity -- not attempted here.
 
 ## Open items (not blocking, tracked so they don't get lost)
 
-- **The whole installer redesign (2026-09-22) has never been exercised in
-  a real boot** -- this is the biggest gap in the project right now, same
+- **The installer redesign (2026-09-22) has never booted on real hardware
+  or a VM** -- this is the biggest gap in the project right now, same
   caveat this section has carried since the very first architecture, just
-  for a newer design. Specific unverified pieces, each flagged in the
-  relevant file's own comment too:
-  - `Containerfile.installer`'s exact `dracut --force --add dmsquash-live`
-    invocation (confirmed the *module* is what bootc-image-builder's
-    `bootc-generic-iso` type needs, not the exact command for this
-    dracut/kernel version).
+  for a newer design. What HAS been verified, and how, matters here since
+  earlier passes on this exact redesign got real things wrong (a
+  nonexistent bootc-image-builder type, a dracut clevis-module chain that
+  took two guesses to actually fix) before switching to "verify locally,
+  don't guess" -- see individual files' comments and git history:
+  - `Containerfile.installer`'s dracut invocation (module list, `--kver`,
+    the three dracut.conf.d files it removes) was verified by actually
+    building a real initramfs locally and confirming with `lsinitrd` that
+    `dmsquash-live` is present.
+  - The live-ISO mechanism itself (mksquashfs + grub2-mkrescue,
+    `build_installer_iso.py`) was verified locally end-to-end against the
+    base AlmaLinux bootc image -- a real ISO was built, and `xorriso -indev
+    ... -find` confirmed `LiveOS/squashfs.img`/`boot/grub/grub.cfg`/
+    `boot/vmlinuz`/`boot/initramfs.img` all land at the exact paths
+    dmsquash-live's own source (not docs) expects.
+  - NOT verified even locally: actual x86_64 BIOS+UEFI hybrid boot
+    capability. The dev sandbox this was built in is aarch64, which has no
+    BIOS/El Torito concept at all -- the `grub2-pc`/`grub2-efi-x64`/
+    `shim-x64` package names were confirmed to exist via
+    `dnf --forcearch=x86_64 repoquery` against the real AlmaLinux 10 repos,
+    but grub2-mkrescue producing an actually-bootable hybrid ISO with them
+    could only be checked on a real x86_64 build. CI (GitHub's
+    `ubuntu-latest` runners are x86_64) is the first real test of that
+    specific piece.
   - `installer_deploy.py`'s `bootc install to-filesystem` flags
     (`--root-mount-spec`/`--boot-mount-spec`/`--replace`) -- confirmed
     against research, not a real `--help` output or a real run.
   - `pam-ssh-auth-info` (Containerfile, `totp.py`'s PAM stack) is built
     from unpinned `main` HEAD (no tagged releases upstream exist) and its
     `make install` module path isn't confirmed to land where PAM's
-    default search path expects -- pin to a specific reviewed commit SHA
-    and confirm the install path before relying on this for a real
-    deployment. The password+TOTP / key+TOTP split itself needs a real
-    login test of both paths, not just `sshd -t`/`sshd -T`.
+    default search path expects, though it did compile and install
+    without error in a real local build -- pin to a specific reviewed
+    commit SHA before relying on this for a real deployment. The
+    password+TOTP / key+TOTP split itself needs a real login test of both
+    paths, not just `sshd -t`/`sshd -T`.
   - Dynamic root/bulk disk selection in `installer_disks.py` needs a real
     two-disk boot to confirm it lands on the right disk for each role --
     the exact thing that made the old kickstart-era hardcoded `/dev/vda`
