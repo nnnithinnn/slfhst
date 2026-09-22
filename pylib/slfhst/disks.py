@@ -1,15 +1,16 @@
 """Stage1: find and prepare the bulk data disk.
 
-Anaconda's kickstart (autopart --type=plain, see kickstart/generic.ks)
-already partitioned, formatted, and installed the appliance onto whichever
-single disk its own candidate-disk logic picked -- we deliberately don't
-tell it which one, and --type=plain (not lvm) means it can't have spanned
-multiple disks even on a multi-disk box. So at first boot there is exactly
-one job left: find whichever disk isn't the one that ended up as root
-(discovered dynamically via `findmnt`, not assumed), and turn it into
-/srv/data. Nothing here assumes a specific disk size or device name --
-that's what keeps the image generic, and it never needed to coordinate
-with anything the kickstart does.
+Anaconda's kickstart (ignoredisk --only-use=/dev/vda + autopart, see
+kickstart/generic.ks) already partitioned, formatted, and installed the
+appliance onto that one disk, explicitly leaving every other disk
+untouched. (Earlier revisions of this comment claimed `autopart
+--type=plain` alone guaranteed single-disk use without needing
+ignoredisk -- a real install proved that wrong, see generic.ks's own
+comment for the correction.) At first boot there is exactly one job left:
+find whichever disk isn't the one that ended up as root (discovered
+dynamically via `findmnt`, not assumed -- this code doesn't actually care
+that the kickstart happens to hardcode /dev/vda, it would work the same
+if that ever changes), and turn it into /srv/data.
 """
 from __future__ import annotations
 

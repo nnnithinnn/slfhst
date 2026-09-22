@@ -8,31 +8,36 @@
 # kickstart file %pre mutates in place, which real testing showed had zero
 # effect (neither the dynamic partitioning nor the account lines a %pre
 # script wrote ever took effect), even though that's what Anaconda's own
-# source nominally does. Rather than ship a third unverified variant of the
-# same mechanism, this drops %pre entirely:
+# source nominally does. This drops %pre entirely:
 #
-# - Partitioning: no more %pre + lsblk-based dynamic disk selection. Instead
-#   `autopart --type=plain` (matches bootc-image-builder's own verified
-#   reference kickstart for customizations.installer.kickstart.contents --
-#   no %pre, no ignoredisk, nothing custom). --type=plain forces traditional
-#   (non-LVM) partitions, which can't span multiple disks -- so on the real
-#   two-disk target (fast + bulk) this can only land on one disk, whichever
-#   Anaconda's own candidate-disk logic picks, without risking silently
-#   spanning both. Which physical disk that ends up being doesn't matter:
-#   stage1's disks.py already finds the ACTUAL root disk dynamically via
-#   `findmnt -no SOURCE /` post-install and treats whatever else exists as
-#   the bulk disk -- it was never told which disk to expect, so it needed no
-#   changes here. Also resolves the old "assumes UEFI" open item as a side
-#   effect: autopart creates whatever boot partition the detected firmware
-#   (BIOS or UEFI) actually needs, instead of a hand-written /boot/efi line.
+# - Partitioning: no more %pre + lsblk-based dynamic disk selection.
+#   `ignoredisk --only-use=/dev/vda` + `autopart --type=plain` instead.
+#   /dev/vda is hardcoded on purpose, not an oversight: a real install's
+#   own log showed `autopart --type=plain` WITHOUT ignoredisk partitioning
+#   BOTH disks (vda and vdb) -- `--type=plain` only controls the partition
+#   scheme (plain vs LVM), it never guaranteed single-disk use, and
+#   pykickstart has no declarative "pick the smallest/non-rotational disk"
+#   predicate to fall back on. With %pre confirmed non-functional in this
+#   pipeline (two real failures) and no generic alternative, /dev/vda is
+#   the pragmatic call: it's the standard virtio-blk device-naming
+#   convention on KVM/VPS hosts (confirmed by this same real install's own
+#   log) and matches every real deployment target this image is actually
+#   built for. If a target box ever doesn't use virtio-blk naming, this is
+#   the line to change -- flagged, not hidden.
 # - Accounts: still zero real credentials baked in (all per-deployment
 #   account setup is stage1's job, see systemd/system/slfhst-stage1*), but
 #   the throwaway account Anaconda's non-interactive mode requires to exist
-#   is now static kickstart text instead of %pre-generated -- it's deleted
-#   by stage1-cleanup.service before networking even comes up, so a fixed
-#   placeholder password is fine; there's nothing left to gain by involving
-#   the same unverified mechanism that just failed twice for a value whose
-#   secrecy doesn't actually matter.
+#   is static kickstart text instead of %pre-generated -- it's deleted by
+#   stage1-cleanup.service before networking even comes up, so a fixed
+#   placeholder password is fine.
+# - network --activate stays (below): the OS deploy itself is already
+#   fully local/offline (`ostree container image deploy` reads the image
+#   embedded in the ISO, not a network pull -- confirmed by a real
+#   install's own log), but bootc-image-builder's own reference kickstart
+#   always includes this line and sets NetworkOnBoot=true itself when
+#   generating the base kickstart it prepends to ours -- removing it would
+#   deviate from the only proven-working pattern for a risk (this line
+#   supposedly requiring network) that isn't what's actually failed here.
 
 text --non-interactive
 lang en_US.UTF-8
@@ -42,6 +47,7 @@ network --bootproto=dhcp --device=link --activate --onboot=on
 
 zerombr
 clearpart --all --initlabel --disklabel=gpt
+ignoredisk --only-use=/dev/vda
 autopart --type=plain --noswap
 
 # Anaconda's non-interactive/cmdline mode hard-requires the Root password

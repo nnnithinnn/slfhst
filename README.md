@@ -27,12 +27,17 @@ build/verify loop.
 - `systemd/system/` -- the stage1/stage2 oneshot chains, plus
   `slfhst-monitor.timer` (health/DNSBL/Cloudflare-IP refresh, anomaly-only
   email) and `slfhst-bootc-update.timer` (weekly `bootc upgrade --apply`).
-- `kickstart/generic.ks` -- generic Anaconda kickstart. Plain `autopart
-  --type=plain` (no `%pre`, no `ignoredisk` -- see the file's own comment
-  for why that changed after real installs falsified two `%pre`-based
-  fixes); `--type=plain` can't span multiple disks, so on a multi-disk box
-  it lands on one, and stage1's `disks.py` discovers whichever disk *isn't*
-  root at first boot and claims it as bulk storage.
+- `kickstart/generic.ks` -- Anaconda kickstart. No `%pre` (see the file's
+  own comment for why, after real installs falsified two `%pre`-based
+  fixes). Targets `/dev/vda` explicitly (`ignoredisk --only-use=`) --
+  hardcoded on purpose: `autopart --type=plain` alone doesn't guarantee
+  single-disk use (also learned the hard way), pykickstart has no
+  declarative disk-selection predicate, and `/dev/vda` is the standard
+  virtio-blk convention on the real KVM/VPS targets this image is built
+  for. Not fully generic across every possible disk-naming scheme any
+  more -- see Open items. Stage1's `disks.py` discovers whichever disk
+  *isn't* root at first boot and claims it as bulk storage, independent of
+  whatever device name the kickstart used.
 - `scripts/` -- `build_image.py` (podman build), `build_iso.py` (qcow2 or
   anaconda-iso via bootc-image-builder), `check.py` (byte-compile + import
   every module, what CI runs first).
@@ -86,14 +91,23 @@ boots -- keeping the image build and the ISO build in one run is what
 guarantees they always match, rather than drifting apart between whenever
 someone remembered to tag a release.
 
-The pipeline (`publish.yml`): build the appliance image -> push it to GHCR
-as `:stable` + a dated tag (what `slfhst-bootc-update.timer` on
-already-running nodes tracks) -> build the Anaconda ISO from that exact
-just-pushed dated tag, not `:stable` (so a concurrent push can't move the
-image out from under a slower ISO build) -> publish it as the single
-rolling `latest` GitHub Release, replacing whatever ISO was there before
-(`scripts/publish_release.py` deletes-then-recreates the `latest` release
-each run, since `gh release create` refuses to reuse an existing tag).
+Five steps (`publish.yml`), no more: **1. Precheck** (`check.py`) ->
+**2. Build image** (`podman build`, local only) -> **3. Build ISO**
+(`bootc-image-builder`, fed the *local* image directly -- `localhost/
+slfhst:latest`, no GHCR round-trip -- see `build_iso.py`'s docstring for
+how a rootless-podman-built local image gets into bootc-image-builder's
+required rootful storage) -> **4. Publish image** (push to GHCR as
+`:stable` + a dated tag, what `slfhst-bootc-update.timer` on
+already-running nodes tracks) -> **5. Publish ISO** (the single rolling
+`latest` GitHub Release, replacing whatever ISO was there before --
+`scripts/publish_release.py` deletes-then-recreates it each run, since
+`gh release create` refuses to reuse an existing tag).
+
+Building the ISO from the local image rather than a GHCR reference isn't
+just simpler -- it means the ISO build has no network dependency on this
+run's own GHCR push succeeding first, and can't end up embedding a
+different image than the one that gets pushed, since both come from the
+exact same local build.
 
 Git tags aren't part of this any more -- tag something yourself
 (`git tag v0.2.0 && git push origin v0.2.0`) if you want a bookkeeping
@@ -128,18 +142,23 @@ configurable via anything `bootc-image-builder` exposes.
 
 ## Image size
 
-`scripts/build_image.py` builds with `--squash-all`, not cosmetically --
-the Containerfile removes several base-image packages in a layer *after*
-the base image's own layers, and without squashing those bytes are still
-physically present in the image (OCI layers are additive; removal just
-adds whiteout markers). `tsflags=nodocs` + `install_weak_deps=False` are
-also set globally in `/etc/dnf/dnf.conf` for anything installed after
-that point.
+`scripts/build_image.py` no longer squashes (`--squash-all` was removed
+2026-09-22 -- it broke real installs, see that script's docstring:
+squashing destroys the `ostree.final-diffid` label bootc's container-image
+deploy needs, so it's a correctness requirement, not a style choice). The
+Containerfile still removes several base-image packages in a layer *after*
+the base image's own layers, but without squashing those bytes stay
+physically present (OCI layers are additive; removal just adds whiteout
+markers) -- there's no available fix for that the way there would be for a
+package this Containerfile installs itself (do the install+removal in one
+layer): these packages ship in the *base* image's own layers, which we
+don't control. `tsflags=nodocs` + `install_weak_deps=False` are still set
+globally in `/etc/dnf/dnf.conf` for anything installed after that point,
+and still help.
 
-Removed (all confirmed zero dependents via `rpm -q --whatrequires`
-before removal, image content measured via `podman save`, not
-`podman images`/`podman inspect .Size` which were unreliable for a
-squashed image on this podman version):
+Removed (all confirmed zero dependents via `rpm -q --whatrequires` before
+removal) -- the whiteout markers still shrink what actually needs pulling
+at runtime even though the bytes remain in the image itself:
 
 - an unused SSSD/Samba/AD-auth stack + `toolbox` + `libicu` (~100MB)
 - `linux-firmware` (~700MB) -- explicit decision to drop it for this
@@ -150,18 +169,26 @@ squashed image on this podman version):
   hypervisor path, reverting the `linux-firmware` line in the
   Containerfile is the lever.
 
-Net result: **~1.94GB -> ~1.75GB** (`podman save` tarball size).
+Net result: back to **~1.94GB** (`podman save` tarball size) -- the
+~1.75GB squashed figure from an earlier README revision no longer applies
+and shouldn't be quoted; correctness (a bootc image that actually deploys)
+took priority over that ~190MB reclaim. A real ostree-aware size-reduction
+path (e.g. an `rpm-ostree compose`-style rebuild instead of layering atop
+the published base image) would be the way to get it back, if ever worth
+the added complexity -- not attempted here.
 
 ## Open items (not blocking, tracked so they don't get lost)
 
-- `kickstart/generic.ks`'s `autopart --type=plain` relies on `--type=plain`
-  being unable to span multiple disks (so a two-disk box can't have both
-  disks silently consumed by the OS install) -- this is standard pykickstart
-  behavior, not something specific to our setup, but hasn't been directly
-  confirmed on a real two-disk boot yet. If it ever *did* span both disks,
-  `disks.py`'s "largest non-root disk becomes bulk storage" logic would find
-  nothing left to claim -- watch for that specifically on the next real
-  install rather than assuming this is settled.
+- `kickstart/generic.ks` hardcodes `ignoredisk --only-use=/dev/vda`
+  (2026-09-22, corrected from an earlier, now-disproven claim that
+  `autopart --type=plain` alone guaranteed single-disk use -- a real
+  install showed it partitioning both disks). This assumes virtio-blk
+  device naming (`vda`/`vdb`, ...), which covers the real KVM/VPS targets
+  this image is built for, but isn't universal -- a target using NVMe
+  naming (`nvme0n1`) or a different virtualization stack would need this
+  line changed. Revisit if/when a non-virtio target actually matters,
+  rather than trying to re-generalize this preemptively (the last three
+  attempts at a fully generic version all failed against real installs).
 - Image tags are now pinned (2026-09-22 pass): `stalwartlabs/stalwart:v0.16.20`,
   `vaultwarden/server:1.37.2`, `bulwarkmail/webmail:1.10.0`,
   `dxflrs/garage:v1.0.1`, `postgres:16-alpine`, `traefik:v3.3`. Ente's
