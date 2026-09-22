@@ -4,7 +4,15 @@
 # Per-deployment values (hostname, domain, keys, secrets) are collected at first
 # boot by the stage1 wizard (usr/libexec/slfhst/stage1_wizard.py), never baked
 # in here.
-FROM quay.io/almalinuxorg/almalinux-bootc:latest
+# Pinned to the major version explicitly, not :latest -- :latest currently
+# still tracks AlmaLinux 9. AlmaLinux 10 is smaller out of the box even
+# before any of our own debloat work (measured: ~1.5GB vs ~1.75GB for an
+# otherwise-identical build), ships Python 3.12 instead of 3.9, and has a
+# later EOL. Verified compatible: repo file structure, EPEL availability,
+# and every package/tool this Containerfile and pylib/slfhst depend on are
+# all present (with two adjustments noted below where EL10 genuinely
+# differs from EL9).
+FROM quay.io/almalinuxorg/almalinux-bootc:10
 
 # --- Use AlmaLinux's own repo servers, not the third-party mirrorlist ------
 # The base image's almalinux-*.repo files default to mirrorlist=, which
@@ -77,10 +85,6 @@ RUN dnf -y remove \
 #   man-db + groff-base: zero dependents (groff-base's only requirer is
 #     man-db). tsflags=nodocs already means no new man pages get installed;
 #     this drops the indexing daemon itself.
-#   fwupd + fwupd-plugin-flashrom + flashrom + libjcat: zero dependents.
-#     Firmware-update daemon for physical hardware; irrelevant in a VM.
-#   dmidecode: its only requirer, flashrom, is removed above in this same
-#     transaction.
 #   sg3_utils + sg3_utils-libs: zero dependents. SCSI generic device tools,
 #     not needed for virtio/NVMe disks.
 #   nfs-utils + libnfsidmap + rpcbind + gssproxy + quota + quota-nls: zero
@@ -107,12 +111,31 @@ RUN dnf -y remove \
 # dracut's lvm and crypt modules, which need these tools present to build
 # a working initramfs. Also not touching os-prober (grub2-tools requires
 # it) or irqbalance (genuinely useful on a multi-core VPS).
+#
+# Also NOT touching fwupd/fwupd-plugin-flashrom/flashrom/libjcat/dmidecode
+# on this (AlmaLinux 10) base, unlike the EL9 build this started on: fwupd
+# itself provides the virtual `dbxtool` capability here, which the
+# *protected* shim-aa64 (UEFI Secure Boot bootloader) package requires --
+# confirmed by actually testing the removal, which broke the build with
+# "Problem: The operation would result in broken dependencies for the
+# following protected packages: shim-aa64". This dependency didn't exist
+# on EL9 (fwupd had zero dependents there) -- a good example of why this
+# whole removal list is verified per-base-image, not assumed to transfer.
+#
+# Also NOT touching exim, tried and reverted: fail2ban hard-requires
+# fail2ban-sendmail, which hard-requires /usr/sbin/sendmail, and exim is
+# EL10's provider for that virtual capability (confirmed via `dnf install`
+# actually pulling it in during the next RUN step even after removal was
+# attempted here, since at *this* point in the build it isn't installed
+# yet to remove -- it only appears once fail2ban gets installed below).
+# It's disabled by default and only 5MB; its own EPEL package just doesn't
+# declare /var/log/exim + /var/spool/exim/* via tmpfiles.d, which is what
+# usr/lib/tmpfiles.d/slfhst.conf's exim entries paper over (see that file).
 RUN dnf -y remove \
         udisks2 libudisks2 libblockdev libblockdev-utils libblockdev-fs \
         libblockdev-mdraid libblockdev-crypto libblockdev-swap \
         libblockdev-part libblockdev-loop libbytesize mdadm \
         man-db groff-base \
-        fwupd fwupd-plugin-flashrom flashrom libjcat dmidecode \
         sg3_utils sg3_utils-libs \
         nfs-utils libnfsidmap rpcbind gssproxy quota quota-nls \
         criu criu-libs \
@@ -124,12 +147,21 @@ RUN dnf -y remove \
 # python3 ships in the AlmaLinux bootc base already -- everything under
 # usr/libexec/slfhst/ and usr/bin/slfhst is Python (stdlib only, no pip
 # installs in the image), never shell, per project convention.
+#
+# parted and systemd-container are explicit, not implicit: disks.py needs
+# parted/partprobe (stage1 bulk-disk partitioning) and quadlets.py/deploy.py
+# need machinectl (`machinectl shell svc@ ...`, systemd-container's
+# binary) -- neither ships in the base image by default. Found by actually
+# testing each tool's presence rather than assuming it, which also caught
+# that machinectl was silently missing from the EL9 build all along (never
+# exercised in a real boot until now) -- not an EL10-specific gap.
 RUN dnf -y install epel-release && \
     dnf -y install \
         podman \
         systemd-networkd \
         systemd-resolved \
         systemd-timesyncd \
+        systemd-container \
         firewalld \
         fail2ban \
         google-authenticator \
@@ -138,6 +170,7 @@ RUN dnf -y install epel-release && \
         curl \
         bind-utils \
         openssl \
+        parted \
     && dnf clean all
 
 # --- Rootless port publish for privileged ports (25/465/587/143/993/8443) ---
