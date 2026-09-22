@@ -32,9 +32,24 @@ FROM localhost/slfhst:latest
 # modules/<host-kernel-version> doesn't exist in here). /lib/modules
 # has exactly one entry: whatever kernel RPM the almalinux-bootc base
 # image installed.
+#
+# --omit clevis: the base image's own /usr/lib/dracut/dracut.conf.d/
+# 30-bootc-standard.conf force-enables dracut's clevis module (LUKS/TPM
+# disk-unlock support, needed for the REAL appliance's own boot -- see
+# the main Containerfile's comment on deliberately not removing
+# lvm2/cryptsetup/clevis) but the actual clevis dracut MODULE FILES aren't
+# installed, so a real `--force` rebuild fails ("Module 'clevis' cannot be
+# found") -- this apparently never gets exercised for the real appliance
+# image since ostree/bootc regenerates its initramfs at deploy time, not
+# at container-build time; this installer's live-boot squashfs is the
+# first thing to ever force dracut to run inside this image directly.
+# The installer doesn't need LUKS/TPM unlock support at all (it's a
+# throwaway live environment, not an encrypted-root system), so omitting
+# the module here is correct, not a workaround -- doesn't touch the real
+# appliance image's own boot behavior.
 RUN dnf -y install dracut-live squashfs-tools && \
     KVER="$(ls /lib/modules | head -n1)" && \
-    dracut --force --add dmsquash-live --kver "$KVER" && \
+    dracut --force --add dmsquash-live --omit clevis --kver "$KVER" && \
     dnf clean all
 
 # The appliance image itself, embedded as a local oci-archive so
