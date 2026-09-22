@@ -24,6 +24,7 @@ CONFIG_FILE_DESTS = {
     "traefik-dynamic.yml": ("traefik", "dynamic"),
     "museum.yaml": ("ente",),
     "garage.toml": ("garage",),
+    "stalwart-hardening.toml": ("stalwart", "etc"),
 }
 
 SECRET_KEYS = (

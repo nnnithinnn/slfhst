@@ -217,6 +217,9 @@ target.mkdir(parents=True, exist_ok=True); \
 # --- Bake in stage1/stage2 units, scripts, quadlet templates, and the CLI ---
 COPY systemd/system/ /usr/lib/systemd/system/
 COPY usr/lib/tmpfiles.d/ /usr/lib/tmpfiles.d/
+COPY usr/lib/sysctl.d/ /usr/lib/sysctl.d/
+COPY usr/lib/modprobe.d/ /usr/lib/modprobe.d/
+COPY usr/lib/systemd/journald.conf.d/ /usr/lib/systemd/journald.conf.d/
 COPY usr/libexec/slfhst/ /usr/libexec/slfhst/
 COPY usr/share/slfhst/templates/ /usr/share/slfhst/templates/
 COPY usr/bin/slfhst /usr/bin/slfhst

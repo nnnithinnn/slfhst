@@ -154,6 +154,10 @@ Net result: **~1.94GB -> ~1.75GB** (`podman save` tarball size).
   defaults but haven't been pinned against each project's current docs.
 - `museum.yaml.tmpl` is a best-effort scaffold -- validate every key against
   Ente's own `museum.yaml.sample` before a real deploy.
+- `stalwart-hardening.toml.tmpl` (rate limits, auto-ban, listener
+  max-connections) is sourced from Stalwart's own `QUICKSTART_CONFIG` and
+  test configs, not hand-verified against a real running instance --
+  confirm the listener names and schema still match before relying on it.
 - Stalwart's DKIM public key isn't wired into `slfhst dns sync` yet
   (`dns_cf._stalwart_dkim_txt()` is a stub) -- add the `default._domainkey`
   TXT record manually until that's automated.

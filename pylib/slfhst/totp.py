@@ -12,7 +12,18 @@ from textwrap import dedent
 from . import common
 from .common import log, run
 
-SSHD_DROPIN = Path("/etc/ssh/sshd_config.d/60-slfhst-totp.conf")
+
+# Numbered to sort BEFORE AlmaLinux's own drop-ins (40-redhat-crypto-
+# policies.conf, 50-redhat.conf), not after -- found by actually testing
+# with `sshd -t` rather than assuming: sshd_config's Include mechanism is
+# first-occurrence-wins for most directives (not last, unlike most config
+# systems), so a higher-numbered file here would have its
+# KbdInteractiveAuthentication/ChallengeResponseAuthentication and
+# X11Forwarding silently overridden by 50-redhat.conf's own settings, and
+# its Ciphers/MACs/KexAlgorithms silently ignored entirely -- 40-redhat-
+# crypto-policies.conf's own comment says as much: override those "before
+# this block," i.e. in an earlier-sorting file.
+SSHD_DROPIN = Path("/etc/ssh/sshd_config.d/10-slfhst-totp.conf")
 PAM_SSHD = Path("/etc/pam.d/sshd")
 FAIL2BAN_JAIL = Path("/etc/fail2ban/jail.d/sshd.local")
 
@@ -22,6 +33,36 @@ SSHD_DROPIN_CONTENT = dedent("""\
     UsePAM yes
     PermitRootLogin no
     AuthenticationMethods publickey,keyboard-interactive:pam
+
+    # Reduce the brute-force/resource-exhaustion budget: fewer auth
+    # attempts per connection, less time to complete auth, and cap
+    # concurrent *unauthenticated* connections -- a connection flood
+    # doesn't need valid credentials to make sshd fork auth processes,
+    # so this matters even with key+TOTP auth. GreenCloudVPS's own
+    # network-edge DDoS scrubbing doesn't reach this layer.
+    MaxAuthTries 3
+    LoginGraceTime 30
+    MaxStartups 10:30:60
+
+    # Idle sessions get dropped rather than held open indefinitely.
+    ClientAliveInterval 300
+    ClientAliveCountMax 2
+
+    # Not needed on a headless appliance.
+    X11Forwarding no
+
+    # AllowTcpForwarding is deliberately left at its default (enabled):
+    # SSH tunneling to reach internal-only services (Garage's S3 API,
+    # Postgres, etc. -- nothing on the podman network is exposed
+    # publicly) is a legitimate, expected admin workflow here.
+
+    # Modern algorithms only (Mozilla "modern" OpenSSH profile) --
+    # drops legacy ciphers/MACs/KEX with known weaknesses.
+    Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+    MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+    KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256
+
+    LogLevel VERBOSE
     """)
 
 # Stock RHEL/AlmaLinux sshd PAM stack, with the `auth substack password-auth`

@@ -1,7 +1,8 @@
-"""Stage2: bootstrap the backing services Ente museum needs -- Garage's
-single-node cluster layout + bucket/key, and waiting for Postgres to be
-ready (its own migrations run inside museum on first start, nothing to do
-here beyond making sure the container is actually up first).
+"""Stage2: one-time idempotent setup that can only happen after a
+container's first start -- Garage's single-node cluster layout + bucket/key
+for Ente museum, waiting for Postgres to be ready (its own migrations run
+inside museum on first start), and wiring Stalwart's hardening config in
+after Stalwart's own auto-bootstrap has created its base config.toml.
 """
 from __future__ import annotations
 
@@ -13,6 +14,9 @@ from .common import DATA_DIR, SERVICE_USER, log, run
 
 GARAGE_BUCKET = "ente"
 GARAGE_KEY_NAME = "museum"
+
+STALWART_CONFIG = DATA_DIR / "stalwart" / "etc" / "config.toml"
+STALWART_HARDENING_INCLUDE = "/opt/stalwart-mail/etc/slfhst-hardening.toml"
 
 
 def _podman_exec(container: str, *args: str, check: bool = True) -> str:
@@ -67,10 +71,42 @@ def wait_for_postgres() -> None:
     _wait_for("postgres")
 
 
+def harden_stalwart() -> None:
+    """Wire our rate-limit/auto-ban/max-connections config into Stalwart's
+    own auto-generated config.toml via an `include` directive, once that
+    file actually exists (Stalwart creates it on its own first start --
+    quadlets.py already rendered our hardening file to disk before that,
+    same timing as museum.yaml/garage.toml, but Stalwart's own bootstrap
+    still has to run first). Additive and idempotent: never rewrites or
+    replaces config.toml, only appends the include line if it's missing,
+    and refuses to touch it at all if some *other* include directive is
+    already present rather than risk producing an invalid duplicate TOML
+    key (writing a proper TOML merge is out of scope for stdlib-only code).
+    """
+    _wait_for("stalwart")
+    if not STALWART_CONFIG.exists():
+        log.warning("stalwart config.toml not created yet, will retry next run")
+        return
+
+    text = STALWART_CONFIG.read_text()
+    if STALWART_HARDENING_INCLUDE in text:
+        log.info("stalwart hardening already wired up")
+        return
+    if any(line.strip().startswith("include") for line in text.splitlines()):
+        log.warning("stalwart config.toml already has an include= line -- "
+                     "not touching it, add %s to it manually", STALWART_HARDENING_INCLUDE)
+        return
+
+    STALWART_CONFIG.write_text(text.rstrip("\n") + f'\ninclude = ["{STALWART_HARDENING_INCLUDE}"]\n')
+    run(["podman", "restart", "stalwart"], as_user=SERVICE_USER)
+    log.info("stalwart hardening config wired up, restarted to apply")
+
+
 def main() -> None:
     common.require_done_or_exit("stage1")
     wait_for_postgres()
     bootstrap_garage()
+    harden_stalwart()
 
 
 if __name__ == "__main__":
