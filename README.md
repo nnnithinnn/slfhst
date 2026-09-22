@@ -180,19 +180,23 @@ Git tags aren't part of this any more -- tag something yourself
 (`git tag v0.2.0 && git push origin v0.2.0`) if you want a bookkeeping
 checkpoint, but CI doesn't react to it either way.
 
-The ISO ships as a direct GitHub Release asset, comfortably under GitHub's
-2GiB limit for every real Anaconda-based build measured so far (~942MB-
-1.63GB). `scripts/publish_release.py` fails loudly rather than silently
-splitting/compressing if a future build ever actually exceeds the limit,
-so that stays a visible decision if it happens rather than a silent break.
-This new live installer ISO's actual size hasn't been measured in CI
-yet (a ~1GB local test build exists, see `build_installer_iso.py`'s
-docstring) -- its structure is different from the old Anaconda-based ISO
-(no Anaconda live-installer environment; just the installer image
-converted to a squashfs, plus kernel/initrd/EFI boot files, plus the
-embedded appliance-image oci-archive) and likely smaller, but that's a
-prediction,
-not a measurement -- confirm against the first real build.
+The ISO ships as a direct GitHub Release asset. `scripts/publish_release.py`
+fails loudly rather than silently splitting/compressing if a build ever
+actually exceeds GitHub's 2GiB limit, so that stays a visible decision if
+it happens rather than a silent break. Old Anaconda-based builds measured
+~942MB-1.63GB, comfortable headroom. **The new live installer ISO is
+~2.06GB (2,063,931,392 bytes) as of its first successful real build
+(2026-09-22)** -- only ~80MB under the 2,147,483,648-byte limit, a real,
+current risk rather than a distant hypothetical. Two things stack here
+that didn't before: the appliance image is back to ~1.94GB unsquashed
+(see "Image size" below -- `--squash-all` broke ostree deploys), and the
+installer image embeds a *full second copy* of that same appliance image
+as an oci-archive (`Containerfile.installer`) so `bootc install
+to-filesystem` never needs network -- squashfs compression clearly isn't
+reclaiming much against that combination. If the appliance image grows at
+all from here, this needs attention before it fails a real release
+outright -- e.g. compressing the embedded oci-archive harder, or
+reconsidering whether it needs to be a full copy at all.
 
 ## Image size
 
@@ -251,15 +255,14 @@ the added complexity -- not attempted here.
     ... -find` confirmed `LiveOS/squashfs.img`/`boot/grub/grub.cfg`/
     `boot/vmlinuz`/`boot/initramfs.img` all land at the exact paths
     dmsquash-live's own source (not docs) expects.
-  - NOT verified even locally: actual x86_64 BIOS+UEFI hybrid boot
-    capability. The dev sandbox this was built in is aarch64, which has no
-    BIOS/El Torito concept at all -- the `grub2-pc`/`grub2-efi-x64`/
-    `shim-x64` package names were confirmed to exist via
-    `dnf --forcearch=x86_64 repoquery` against the real AlmaLinux 10 repos,
-    but grub2-mkrescue producing an actually-bootable hybrid ISO with them
-    could only be checked on a real x86_64 build. CI (GitHub's
-    `ubuntu-latest` runners are x86_64) is the first real test of that
-    specific piece.
+  - x86_64 build confirmed on 2026-09-22 (CI, GitHub's `ubuntu-latest`
+    runners): `grub2-pc`/`grub2-efi-x64`/`shim-x64` install and
+    grub2-mkrescue produces a ~2.06GB ISO without error. **Build success is
+    not boot success** -- nothing has actually booted this ISO yet (no
+    KVM in this dev sandbox), so the BIOS+UEFI hybrid boot catalog itself,
+    dmsquash-live actually finding and mounting the squashfs at real boot,
+    and the installer unit actually running are all still unverified. That
+    real boot test is the next real gap, not this build step.
   - `installer_deploy.py`'s `bootc install to-filesystem` flags
     (`--root-mount-spec`/`--boot-mount-spec`/`--replace`) -- confirmed
     against research, not a real `--help` output or a real run.
