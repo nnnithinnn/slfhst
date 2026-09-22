@@ -64,6 +64,62 @@ RUN dnf -y remove \
         sssd sssd-* samba-client-libs samba-common samba-common-libs \
         libsmbclient libwbclient toolbox libicu linux-firmware
 
+# --- Second debloat pass: desktop/hardware/NFS tooling irrelevant on a
+# headless VPS appliance. All confirmed via `rpm -q --whatrequires` (see
+# git history for the exact command output):
+#
+#   udisks2/libudisks2 + its libblockdev-* plugin cluster (fs/mdraid/crypto/
+#     swap/part/loop/utils) + libbytesize: zero dependents. udisks2 is a
+#     D-Bus disk-automounting daemon for desktop environments; we partition
+#     and mount disks ourselves in stage1 (disks.py).
+#   mdadm: its only requirer, libblockdev-mdraid, is removed above in this
+#     same transaction.
+#   man-db + groff-base: zero dependents (groff-base's only requirer is
+#     man-db). tsflags=nodocs already means no new man pages get installed;
+#     this drops the indexing daemon itself.
+#   fwupd + fwupd-plugin-flashrom + flashrom + libjcat: zero dependents.
+#     Firmware-update daemon for physical hardware; irrelevant in a VM.
+#   dmidecode: its only requirer, flashrom, is removed above in this same
+#     transaction.
+#   sg3_utils + sg3_utils-libs: zero dependents. SCSI generic device tools,
+#     not needed for virtio/NVMe disks.
+#   nfs-utils + libnfsidmap + rpcbind + gssproxy + quota + quota-nls: zero
+#     dependents on nfs-utils (the rest are nfs-utils's own dependencies,
+#     cascading away with it). We don't mount NFS or enforce disk quotas.
+#   criu + criu-libs: zero dependents once paired (criu-libs requires
+#     criu). Container checkpoint/restore, a podman feature unused here.
+#   adcli + adcli-selinux: zero dependents once paired (adcli-selinux
+#     requires adcli). AD-domain-join client, leftover from the sssd/samba
+#     removal above -- these are separately-named, not caught by that glob.
+#   libsss_certmap/libsss_idmap/libsss_nss_idmap/libsss_sudo/libipa_hbac:
+#     zero dependents, same leftover-from-sssd situation as adcli.
+#   stalld: zero dependents. Real-time scheduling starvation-avoidance
+#     daemon; nothing here needs custom RT scheduling.
+#   flatpak-session-helper: zero dependents. Flatpak sandboxing, meaningless
+#     without a desktop session.
+#   avahi-libs: zero dependents. mDNS/Bonjour; no avahi-daemon is installed
+#     to use it in the first place.
+#   nano: redundant with vim-minimal (also in the base image) for the one
+#     use case that matters here -- emergency console editing.
+#
+# Deliberately NOT touching lvm2/device-mapper/cryptsetup/clevis/tpm2 --
+# /usr/lib/dracut/dracut.conf.d/30-bootc-standard.conf explicitly enables
+# dracut's lvm and crypt modules, which need these tools present to build
+# a working initramfs. Also not touching os-prober (grub2-tools requires
+# it) or irqbalance (genuinely useful on a multi-core VPS).
+RUN dnf -y remove \
+        udisks2 libudisks2 libblockdev libblockdev-utils libblockdev-fs \
+        libblockdev-mdraid libblockdev-crypto libblockdev-swap \
+        libblockdev-part libblockdev-loop libbytesize mdadm \
+        man-db groff-base \
+        fwupd fwupd-plugin-flashrom flashrom libjcat dmidecode \
+        sg3_utils sg3_utils-libs \
+        nfs-utils libnfsidmap rpcbind gssproxy quota quota-nls \
+        criu criu-libs \
+        adcli adcli-selinux \
+        libsss_certmap libsss_idmap libsss_nss_idmap libsss_sudo libipa_hbac \
+        stalld flatpak-session-helper avahi-libs nano
+
 # --- Base tooling ------------------------------------------------------------
 # python3 ships in the AlmaLinux bootc base already -- everything under
 # usr/libexec/slfhst/ and usr/bin/slfhst is Python (stdlib only, no pip
