@@ -1,11 +1,14 @@
 """Stage2: one-time idempotent setup that can only happen after a
 container's first start -- Garage's single-node cluster layout + bucket/key
 for Ente museum, waiting for Postgres to be ready (its own migrations run
-inside museum on first start), and wiring Stalwart's hardening config in
-after Stalwart's own auto-bootstrap has created its base config.toml.
+inside museum on first start), and applying Stalwart's hostname/hardening
+settings via stalwart-cli (Stalwart v0.16 has no config.toml any more --
+everything is a JMAP object in its datastore, set declaratively through a
+`stalwart-cli apply` plan instead of a file we can edit directly).
 """
 from __future__ import annotations
 
+import json
 import shutil
 import time
 
@@ -15,8 +18,12 @@ from .common import DATA_DIR, SERVICE_USER, log, run
 GARAGE_BUCKET = "ente"
 GARAGE_KEY_NAME = "museum"
 
-STALWART_CONFIG = DATA_DIR / "stalwart" / "etc" / "config.toml"
-STALWART_HARDENING_INCLUDE = "/opt/stalwart-mail/etc/slfhst-hardening.toml"
+# stalwart-cli ships as its own multi-arch image (stalwartlabs/cli), not
+# bundled into the mail-server image -- it authenticates to Stalwart over
+# the network (STALWART_URL/_USER/_PASSWORD), so it runs as a one-shot
+# container on the same podman network rather than via `podman exec`.
+STALWART_CLI_IMAGE = "docker.io/stalwartlabs/cli:1.0.12"
+STALWART_PLAN_DIR = DATA_DIR / "stalwart" / "slfhst-plan"
 
 
 def _podman_exec(container: str, *args: str, check: bool = True) -> str:
@@ -71,42 +78,111 @@ def wait_for_postgres() -> None:
     _wait_for("postgres")
 
 
-def harden_stalwart() -> None:
-    """Wire our rate-limit/auto-ban/max-connections config into Stalwart's
-    own auto-generated config.toml via an `include` directive, once that
-    file actually exists (Stalwart creates it on its own first start --
-    quadlets.py already rendered our hardening file to disk before that,
-    same timing as museum.yaml/garage.toml, but Stalwart's own bootstrap
-    still has to run first). Additive and idempotent: never rewrites or
-    replaces config.toml, only appends the include line if it's missing,
-    and refuses to touch it at all if some *other* include directive is
-    already present rather than risk producing an invalid duplicate TOML
-    key (writing a proper TOML merge is out of scope for stdlib-only code).
+def _stalwart_hardening_plan(mail_host: str) -> list[dict]:
+    """NDJSON operations for `stalwart-cli apply`. The object/field names
+    (SystemSettings.defaultHostname, Security.authBanRate/authBanPeriod/
+    abuseBanRate/abuseBanPeriod, MtaInboundThrottle.key/match/rate) are
+    verified against Stalwart's actual registry schema source
+    (crates/registry/src/schema/structs.rs) -- not guessed. The envelope
+    (@type/object/id/matchOn/value) matches stalwartlabs/cli's own README
+    and its apply.rs RawOp enum. What's genuinely NOT verified: this has
+    never been run against a live v0.16 instance, so treat a first real
+    deploy's `stalwart-cli apply` output as the actual test, not this
+    comment. Per-listener max-connections (the v0.15 hardening file's
+    third piece) was deliberately dropped rather than guessed at, since a
+    wrong NetworkListener upsert could blank out an existing listener's
+    bind/protocol instead of just capping its connection count.
     """
+    return [
+        {
+            "@type": "update",
+            "object": "SystemSettings",
+            "id": "singleton",
+            "value": {"defaultHostname": mail_host},
+        },
+        {
+            "@type": "update",
+            "object": "Security",
+            "id": "singleton",
+            "value": {
+                "authBanRate": {"count": 5, "period": 120_000},    # 5 auth failures / 2m
+                "authBanPeriod": 3_600_000,                        # ban lasts 1h
+                "abuseBanRate": {"count": 3, "period": 60_000},    # 3 abuse events / 1m
+                "abuseBanPeriod": 3_600_000,                       # ban lasts 1h
+            },
+        },
+        {
+            "@type": "upsert",
+            "object": "MtaInboundThrottle",
+            "matchOn": ["description"],
+            "value": {
+                "slfhst_ip_burst": {
+                    "enable": True,
+                    "description": "slfhst: remote IP burst",
+                    "key": ["remoteIp"],
+                    "match": {"match": [], "else": "true"},
+                    "rate": {"count": 20, "period": 60_000},        # 20/1m
+                },
+                "slfhst_ip_sustained": {
+                    "enable": True,
+                    "description": "slfhst: remote IP sustained",
+                    "key": ["remoteIp"],
+                    "match": {"match": [], "else": "true"},
+                    "rate": {"count": 300, "period": 3_600_000},    # 300/1h
+                },
+            },
+        },
+    ]
+
+
+def harden_stalwart(cfg: dict) -> None:
+    """Set Stalwart's hostname + auto-ban + inbound-throttle settings via
+    `stalwart-cli apply`, run as a one-shot container against Stalwart's
+    JMAP API. `apply` reconciles declared state (create/update, matched by
+    the given key) -- re-running the same plan is a no-op, so no separate
+    idempotency bookkeeping is needed here."""
     _wait_for("stalwart")
-    if not STALWART_CONFIG.exists():
-        log.warning("stalwart config.toml not created yet, will retry next run")
+    admin_password = cfg.get("stalwart_admin_password")
+    if not admin_password:
+        log.warning("no stalwart_admin_password in config, skipping hardening")
         return
 
-    text = STALWART_CONFIG.read_text()
-    if STALWART_HARDENING_INCLUDE in text:
-        log.info("stalwart hardening already wired up")
-        return
-    if any(line.strip().startswith("include") for line in text.splitlines()):
-        log.warning("stalwart config.toml already has an include= line -- "
-                     "not touching it, add %s to it manually", STALWART_HARDENING_INCLUDE)
-        return
+    plan = _stalwart_hardening_plan(f"mail.{cfg.get('domain', '')}")
+    STALWART_PLAN_DIR.mkdir(parents=True, exist_ok=True)
+    plan_file = STALWART_PLAN_DIR / "plan.ndjson"
+    plan_file.write_text("\n".join(json.dumps(op) for op in plan) + "\n")
 
-    STALWART_CONFIG.write_text(text.rstrip("\n") + f'\ninclude = ["{STALWART_HARDENING_INCLUDE}"]\n')
-    run(["podman", "restart", "stalwart"], as_user=SERVICE_USER)
-    log.info("stalwart hardening config wired up, restarted to apply")
+    deadline = time.monotonic() + 120
+    while True:
+        r = run(
+            [
+                "podman", "run", "--rm",
+                "--network", "slfhst",
+                "-v", f"{STALWART_PLAN_DIR}:/work:Z",
+                "-w", "/work",
+                "-e", "STALWART_URL=http://stalwart:8080",
+                "-e", "STALWART_USER=admin",
+                "-e", f"STALWART_PASSWORD={admin_password}",
+                STALWART_CLI_IMAGE,
+                "apply", "--file", "plan.ndjson",
+            ],
+            as_user=SERVICE_USER, check=False, capture=True,
+        )
+        if r.returncode == 0:
+            log.info("stalwart hardening plan applied (hostname, auto-ban, inbound throttles)")
+            return
+        if time.monotonic() >= deadline:
+            log.warning("stalwart-cli apply failed after retrying: %s", r.stderr.strip())
+            return
+        time.sleep(5)
 
 
 def main() -> None:
     common.require_done_or_exit("stage1")
+    cfg = common.load_config()
     wait_for_postgres()
     bootstrap_garage()
-    harden_stalwart()
+    harden_stalwart(cfg)
 
 
 if __name__ == "__main__":

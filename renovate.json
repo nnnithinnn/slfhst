@@ -19,6 +19,13 @@
       "matchStrings": ["quay\\.io/centos-bootc/bootc-image-builder:(?<currentValue>\\S+)"],
       "depNameTemplate": "quay.io/centos-bootc/bootc-image-builder",
       "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Bump the pinned stalwart-cli image in backing.py -- not a Quadlet template, so the regex manager above doesn't see it.",
+      "customType": "regex",
+      "fileMatch": ["^pylib/slfhst/backing\\.py$"],
+      "matchStrings": ["STALWART_CLI_IMAGE = \"(?<depName>[^:\\s]+):(?<currentValue>\\S+)\""],
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [

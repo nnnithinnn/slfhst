@@ -24,7 +24,6 @@ CONFIG_FILE_DESTS = {
     "traefik-dynamic.yml": ("traefik", "dynamic"),
     "museum.yaml": ("ente",),
     "garage.toml": ("garage",),
-    "stalwart-hardening.toml": ("stalwart", "etc"),
 }
 
 SECRET_KEYS = (
@@ -33,6 +32,7 @@ SECRET_KEYS = (
     "postgres_password",
     "garage_rpc_secret",
     "garage_admin_token",
+    "stalwart_admin_password",
 )
 SECRET_ENV_NAMES = {
     "cloudflare_api_token": "cf_api_token",
@@ -40,6 +40,16 @@ SECRET_ENV_NAMES = {
     "postgres_password": "postgres_password",
     "garage_rpc_secret": "garage_rpc_secret",
     "garage_admin_token": "garage_admin_token",
+    "stalwart_admin_password": "stalwart_recovery_admin",
+}
+
+# Podman secret content differs from the config.json value for these --
+# Stalwart's STALWART_RECOVERY_ADMIN env var wants the literal "user:pass"
+# form, not just the password (backing.py reads the plain password straight
+# out of config.json for its own stalwart-cli auth, so only the secret's
+# on-disk content needs the transform).
+SECRET_VALUE_TRANSFORMS = {
+    "stalwart_admin_password": lambda v: f"admin:{v}",
 }
 
 
@@ -66,6 +76,7 @@ def ensure_secrets(cfg: dict) -> None:
         if not value:
             log.warning("no value for secret %s, skipping", key)
             continue
+        value = SECRET_VALUE_TRANSFORMS.get(key, lambda v: v)(value)
         name = SECRET_ENV_NAMES[key]
         if _secret_exists(name):
             continue

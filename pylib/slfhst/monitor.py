@@ -18,8 +18,10 @@ APP_SERVICES = (
     "ente-web-photos", "ente-web-auth", "ente-web-locker", "vaultwarden",
 )
 
-# Host-published ports to sanity-check with a plain TCP connect.
-PORT_CHECKS = (8443, 2525, 4465, 4587, 4143, 4993, 4190)
+# Host-published ports to sanity-check with a plain TCP connect. No
+# 4587/4143 (STARTTLS submission/imap) -- see stalwart.container.tmpl,
+# those listeners no longer exist by default on Stalwart v0.16.
+PORT_CHECKS = (8443, 2525, 4465, 4993, 4190)
 
 DNSBL_ZONES = (
     "zen.spamhaus.org",

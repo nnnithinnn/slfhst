@@ -21,6 +21,10 @@ SECRET_KEYS = (
     "postgres_password",
     "garage_rpc_secret",
     "garage_admin_token",
+    # Plain password -- quadlets.py wraps it as "admin:<password>" when
+    # creating the actual podman secret, since that's the literal
+    # STALWART_RECOVERY_ADMIN format Stalwart expects.
+    "stalwart_admin_password",
 )
 
 # Ente museum only accepts these embedded in museum.yaml, not as env vars,

@@ -18,13 +18,17 @@ CF_IPSET_V6 = "cloudflare-v6"
 
 # (public port, container-side unprivileged port) -- forwarded via firewalld
 # rather than lowering net.ipv4.ip_unprivileged_port_start globally.
+#
+# No plaintext/STARTTLS submission(587)/imap(143) forwards: Stalwart v0.16
+# stopped creating those listeners by default (implicit-TLS-only aligns
+# with the PACC autoconfig draft) and stalwart.container.tmpl only
+# publishes the matching implicit-TLS ports -- see that file's comment.
 WEB_FORWARD = (443, 8443)
 MAIL_FORWARDS = (
-    (25, 2525),    # SMTP
-    (465, 4465),   # SMTPS
-    (587, 4587),   # Submission
-    (143, 4143),   # IMAP
-    (993, 4993),   # IMAPS
+    (25, 2525),    # SMTP (MX delivery -- plaintext-by-default is normal
+                   # here, STARTTLS is opportunistic on this same listener)
+    (465, 4465),   # SMTPS (submissions, implicit TLS)
+    (993, 4993),   # IMAPS (imaps, implicit TLS)
 )
 MAIL_DIRECT_PORTS = (4190,)  # ManageSieve, already unprivileged
 

@@ -148,16 +148,35 @@ Net result: **~1.94GB -> ~1.75GB** (`podman save` tarball size).
 
 ## Open items (not blocking, tracked so they don't get lost)
 
-- Exact current image refs/tags for Stalwart, Bulwark, Ente museum
-  (published image vs. build-from-source), Ente web, Vaultwarden, Traefik,
-  Garage -- the templates in `usr/share/slfhst/templates/` have reasonable
-  defaults but haven't been pinned against each project's current docs.
+- Image tags are now pinned (2026-09-22 pass): `stalwartlabs/stalwart:v0.16.20`,
+  `vaultwarden/server:1.37.2`, `bulwarkmail/webmail:1.10.0`,
+  `dxflrs/garage:v1.0.1`, `postgres:16-alpine`, `traefik:v3.3`. Ente's
+  `ghcr.io/ente/server`/`ghcr.io/ente/web` are deliberately left on
+  `:latest` -- upstream publishes no stable version tags, just a weekly
+  rebuild, so `AutoUpdate=registry` is what actually tracks it (note the
+  org rename from `ente-io`, GHCR doesn't redirect the old path).
+- **Stalwart v0.16 removed TOML config files entirely** (JMAP objects in
+  its datastore instead) and stopped creating plaintext STARTTLS
+  submission(587)/imap(143) listeners by default. This forced a real
+  rework, not just a tag bump: `backing.py::harden_stalwart()` now applies
+  a declarative NDJSON plan via `stalwart-cli` (a separate image,
+  `stalwartlabs/cli`, run as a one-shot container against Stalwart's JMAP
+  API -- see that function's docstring), the firewall/quadlet port list
+  dropped 587/143 in favor of implicit-TLS-only (465/993), and a pinned
+  `STALWART_RECOVERY_ADMIN` credential (via the new
+  `stalwart_admin_password` secret) replaces the old random one-time
+  bootstrap password so automation has something stable to authenticate
+  with. The `SystemSettings`/`Security`/`MtaInboundThrottle` field names in
+  `_stalwart_hardening_plan()` are verified against Stalwart's actual Rust
+  schema source, not guessed -- but **the plan has never been run against a
+  live v0.16 instance**, so treat a real deploy's first `stalwart-cli
+  apply` as the actual test. Per-listener `max-connections` (part of the
+  old hardening file) was deliberately dropped rather than guessed at,
+  since a wrong `NetworkListener` upsert risks blanking out an existing
+  listener's `bind`/`protocol` instead of just capping its connections --
+  revisit once the apply envelope is confirmed against a real instance.
 - `museum.yaml.tmpl` is a best-effort scaffold -- validate every key against
   Ente's own `museum.yaml.sample` before a real deploy.
-- `stalwart-hardening.toml.tmpl` (rate limits, auto-ban, listener
-  max-connections) is sourced from Stalwart's own `QUICKSTART_CONFIG` and
-  test configs, not hand-verified against a real running instance --
-  confirm the listener names and schema still match before relying on it.
 - Stalwart's DKIM public key isn't wired into `slfhst dns sync` yet
   (`dns_cf._stalwart_dkim_txt()` is a stub) -- add the `default._domainkey`
   TXT record manually until that's automated.

@@ -1,22 +1,36 @@
 # SMTP/IMAP/JMAP mail server. Ports are container-side unprivileged targets
 # that firewalld forwards the real privileged ports onto (see firewall.py) --
-# 25->2525, 465->4465, 587->4587, 143->4143, 993->4993, plus 4190 direct.
+# 25->2525, 465->4465, 993->4993, plus 4190 direct. No 587/143 (STARTTLS
+# submission/imap): v0.16 stopped creating those listeners by default,
+# implicit-TLS-only (465/993) is the new upstream default posture, and we
+# followed it rather than hand-restoring the old plaintext listeners.
+#
+# Image is stalwartlabs/stalwart (project renamed from "Stalwart Mail
+# Server" to "Stalwart" with CalDAV/CardDAV/WebDAV added) -- the old
+# stalwartlabs/mail-server image is deprecated, stuck at v0.11.8, and uses
+# a different volume path (/opt/stalwart-mail vs. this image's /opt/stalwart).
+#
+# v0.16 removed TOML config files entirely (JMAP objects in the datastore
+# instead, see backing.py::harden_stalwart) -- STALWART_HOSTNAME no longer
+# does anything; hostname is set via that same apply plan now. The
+# STALWART_RECOVERY_ADMIN secret pins a known bootstrap admin credential
+# (rather than the random one-time password v0.16 would otherwise print to
+# logs) so harden_stalwart's stalwart-cli calls have something stable to
+# authenticate with.
 [Unit]
 Description=Stalwart mail server
 After=slfhst-network.network
 
 [Container]
-Image=docker.io/stalwartlabs/mail-server:latest
+Image=docker.io/stalwartlabs/stalwart:v0.16.20
 AutoUpdate=registry
 Network=slfhst-network.network
 PublishPort=2525:2525
 PublishPort=4465:4465
-PublishPort=4587:4587
-PublishPort=4143:4143
 PublishPort=4993:4993
 PublishPort=4190:4190
-Volume=/srv/data/stalwart:/opt/stalwart-mail:Z
-Environment=STALWART_HOSTNAME=${MAIL_HOST}
+Volume=/srv/data/stalwart:/opt/stalwart:Z
+Secret=stalwart_recovery_admin,type=env,target=STALWART_RECOVERY_ADMIN
 
 [Service]
 Restart=always
