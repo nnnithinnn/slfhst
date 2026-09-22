@@ -93,21 +93,27 @@ locally-built image never lands where bootc-image-builder looks for it),
 and publishes a GitHub Release for the tag. Can also be run manually via
 `workflow_dispatch` without a new tag.
 
-The ISO itself (~2.8GB) is over GitHub's 2GiB release-asset limit, and
-debloating the appliance image doesn't help -- that 2.8GB is dominated by
-Anaconda's own live installer environment (needed to run the installer
-itself before our deployed OS exists), which is fixed-size and not
-something bootc-image-builder exposes any way to configure. So instead of
-a release asset, the ISO is pushed to GHCR as a plain OCI artifact via
-[`oras`](https://oras.land/) (`ghcr.io/<owner>/slfhst-iso:vX.Y.Z`, no size
-limit there) and the release notes link to it:
-```
-oras pull ghcr.io/<owner>/slfhst-iso:v0.1.0
-```
-`scripts/publish_release.py` deliberately does not split or compress the
-ISO to fit GitHub's asset limit instead -- if this ever needs revisiting
-(e.g. GHCR turns out not to fit the deployment story), that should be a
-visible decision, not a silent workaround.
+The ISO ships as a direct GitHub Release asset -- measured at ~942MB for a
+real build, comfortably under GitHub's 2GiB single-asset limit.
+
+That measurement is worth spelling out, since the ISO's structure isn't
+obvious: mounting a real built ISO shows an Anaconda live installer
+environment (`images/install.img`, ~1.13GB -- the actual Anaconda
+installer UI, kernel, and its own temporary root filesystem, needed to
+run the installer before our deployed OS exists) *and* our own appliance
+image embedded directly (`container/blobs/...`, ~1.17GB), which sums to
+~2.6GB on paper -- yet the real ISO file is under a gigabyte. The
+difference is content-level deduplication (composefs/ostree's
+content-addressed storage): our image and Anaconda's own live environment
+are both built from overlapping AlmaLinux packages and share a large
+amount of identical file content, so the actual unique bytes on disc are
+far less than the sum of the two logical sizes. None of this is
+`bootc-image-builder` or AlmaLinux doing anything wrong -- an Anaconda
+live environment of roughly this size is standard for any Anaconda-based
+installer, and it isn't configurable via anything `bootc-image-builder`
+exposes. `scripts/publish_release.py` fails loudly rather than silently
+splitting/compressing if a future build ever grows past the limit, so
+that stays a visible decision.
 
 ## Image size
 
