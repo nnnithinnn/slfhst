@@ -1,8 +1,17 @@
 #!/usr/bin/python3
-"""Build a qcow2 (fast local iteration) or anaconda-iso (real install media)
-with bootc-image-builder, embedding kickstart/generic.ks -- see plan doc
-section 10 and README for the loop: qcow2 first, only cut anaconda-iso once
-that's verified.
+"""Build a qcow2 (fast local iteration, boots the real appliance image
+directly -- no installer involved) or bootc-generic-iso (the live
+installer ISO, see Containerfile.installer/installer_deploy.py) with
+bootc-image-builder.
+
+No kickstart, no config.toml customization needed for either type any
+more -- bootc-generic-iso "reads no build configuration at all" (its own
+docs' words): the ISO is just the given container image, converted to a
+squashfs and booted live. This replaced Anaconda entirely -- see git
+history / Containerfile.installer's own comment for why (kickstart's
+%pre/%include ordering, non-interactive-mode mandatory-spoke validation,
+an ostree.final-diffid deploy failure, autopart spanning multiple disks --
+each only discoverable by burning a real install attempt).
 
 bootc-image-builder refuses to run under rootless podman at all ("this
 command must be run in rootful (not rootless) podman") -- discovered when
@@ -19,10 +28,20 @@ its target image anymore -- it expects it already present in that mounted
 storage and fails with "image not known" otherwise. So a registry
 reference is explicitly `sudo podman pull`ed into that same storage first.
 
---image defaults to the local build (localhost/slfhst:latest). scripts/
-build_image.py builds that rootlessly, so it lives in the invoking user's
-*rootless* storage, not root's rootful one that a sudo'd bootc-image-builder
-reads from -- this script copies it across (save/load) instead of pulling.
+--image defaults per --type: localhost/slfhst:latest for qcow2 (the real
+appliance), localhost/slfhst-installer:latest for bootc-generic-iso (the
+live installer -- see scripts/build_installer_image.py). Either way, a
+local (localhost/) image is copied into rootful storage (save+load) since
+scripts/build_image.py/build_installer_image.py build rootlessly, so it
+lives in the invoking user's *rootless* storage, not root's rootful one
+that a sudo'd bootc-image-builder reads from.
+
+Prefers ghcr.io/osbuild/bootc-image-builder over the older
+quay.io/centos-bootc/bootc-image-builder name: bootc-image-builder was
+folded into the unified image-builder project (archived 2026-06-18);
+ghcr.io/osbuild/bootc-image-builder is the actively-published name, same
+image/CLI/output paths, back-compat with the old name guaranteed through
+RHEL 10's life but not the name to build new work against.
 """
 import argparse
 import os
@@ -32,20 +51,12 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-KICKSTART = REPO_ROOT / "kickstart" / "generic.ks"
-DEFAULT_IMAGE = "localhost/slfhst:latest"
+BUILDER_IMAGE = "ghcr.io/osbuild/bootc-image-builder:latest"
 
-
-def render_config_toml(image_type: str) -> str:
-    # The kickstart customization only applies to Anaconda ISO builds --
-    # bootc-image-builder rejects it for qcow2 ("customizations.installer:
-    # not supported"), so it's only included for anaconda-iso.
-    if image_type != "anaconda-iso":
-        return ""
-    ks = KICKSTART.read_text()
-    if '"""' in ks:
-        raise SystemExit("kickstart content contains a triple-quote, can't embed in TOML as-is")
-    return f'[customizations.installer.kickstart]\ncontents = """\n{ks}"""\n'
+DEFAULT_IMAGE_BY_TYPE = {
+    "qcow2": "localhost/slfhst:latest",
+    "bootc-generic-iso": "localhost/slfhst-installer:latest",
+}
 
 
 def _copy_local_image_to_rootful_storage(image: str) -> None:
@@ -65,23 +76,22 @@ def _copy_local_image_to_rootful_storage(image: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--type", default="qcow2", choices=["qcow2", "anaconda-iso"])
+    parser.add_argument("--type", default="qcow2", choices=["qcow2", "bootc-generic-iso"])
     parser.add_argument("--output", default="output")
-    parser.add_argument("--image", default=DEFAULT_IMAGE,
+    parser.add_argument("--image", default=None,
                          help="image to build from: a local tag (copied into rootful "
-                              "storage first) or a registry reference (pulled directly)")
+                              "storage first) or a registry reference (pulled directly). "
+                              "Defaults per --type -- see DEFAULT_IMAGE_BY_TYPE.")
     args = parser.parse_args()
-
-    config_path = REPO_ROOT / "config.generated.toml"
-    config_path.write_text(render_config_toml(args.type))
+    image = args.image or DEFAULT_IMAGE_BY_TYPE[args.type]
 
     output_dir = REPO_ROOT / args.output
     output_dir.mkdir(exist_ok=True)
 
-    if args.image.startswith("localhost/"):
-        _copy_local_image_to_rootful_storage(args.image)
+    if image.startswith("localhost/"):
+        _copy_local_image_to_rootful_storage(image)
     else:
-        subprocess.run(["sudo", "podman", "pull", args.image], check=True)
+        subprocess.run(["sudo", "podman", "pull", image], check=True)
 
     # Always sudo: bootc-image-builder refuses to run under rootless podman
     # regardless of where the target image comes from. The storage mount is
@@ -89,12 +99,11 @@ def main() -> None:
     # registry ref into, not only to see a local image (see docstring).
     cmd = ["sudo", "podman", "run", "--rm", "-i", "--privileged", "--pull=newer",
            "--security-opt", "label=type:unconfined_t",
-           "-v", f"{config_path}:/config.toml:ro",
            "-v", f"{output_dir}:/output",
            "-v", "/var/lib/containers/storage:/var/lib/containers/storage"]
     if sys.stdin.isatty():
         cmd.insert(cmd.index("-i") + 1, "-t")
-    cmd += ["quay.io/centos-bootc/bootc-image-builder:latest", "--type", args.type, args.image]
+    cmd += [BUILDER_IMAGE, "--type", args.type, image]
 
     subprocess.run(cmd, check=True)
 

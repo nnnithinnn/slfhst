@@ -1,0 +1,42 @@
+# slfhst installer image: a throwaway live-boot environment (bootc-image-
+# builder's bootc-generic-iso type) that partitions disks and deploys the
+# real appliance image via `bootc install to-filesystem` -- replaces
+# Anaconda/kickstart entirely (see git history for why: %pre/%include
+# ordering bugs, non-interactive-mode mandatory-spoke validation, an
+# ostree.final-diffid deploy failure caused by squashing the appliance
+# image, autopart silently spanning multiple disks -- an opaque target to
+# build automation against, each bug only discoverable by burning a real
+# install attempt).
+#
+# FROM the appliance image itself, not a separate base -- this way the
+# installer always matches whatever image it's built alongside in the same
+# CI run (see .github/workflows/publish.yml), and inherits podman/parted/
+# python3/etc. already installed there for free. dracut-live +
+# squashfs-tools are the only things bootc-image-builder's bootc-generic-iso
+# output type actually needs beyond that: a container image with
+# dmsquash-live in its initramfs boots live from a squashfs, full stop --
+# no kickstart, no custom PXE/dracut work needed.
+#
+# The exact dracut invocation to rebuild the initramfs with dmsquash-live
+# is the least-verified line in this file -- confirmed the MODULE is what's
+# needed (research against bootc-image-builder's own docs), not the exact
+# command syntax for this specific dracut/kernel version. Confirm against
+# a real local build before trusting this blindly.
+FROM localhost/slfhst:latest
+
+RUN dnf -y install dracut-live squashfs-tools && \
+    dracut --force --add dmsquash-live && \
+    dnf clean all
+
+# The appliance image itself, embedded as a local oci-archive so
+# installer_deploy.py's `bootc install to-filesystem` never needs network
+# during install -- appliance.tar is produced by
+# scripts/build_installer_image.py (`podman save --format oci-archive`)
+# right before this build, from the exact image this installer is FROM,
+# so the two can never drift apart.
+COPY appliance.tar /usr/share/slfhst/appliance.tar
+
+RUN systemctl enable slfhst-installer.service
+
+LABEL org.opencontainers.image.title="slfhst-installer" \
+      org.opencontainers.image.description="Live installer: partitions disks, deploys the slfhst appliance image, reboots"

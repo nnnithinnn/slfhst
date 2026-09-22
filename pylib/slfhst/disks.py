@@ -1,16 +1,17 @@
 """Stage1: find and prepare the bulk data disk.
 
-Anaconda's kickstart (ignoredisk --only-use=/dev/vda + autopart, see
-kickstart/generic.ks) already partitioned, formatted, and installed the
-appliance onto that one disk, explicitly leaving every other disk
-untouched. (Earlier revisions of this comment claimed `autopart
---type=plain` alone guaranteed single-disk use without needing
-ignoredisk -- a real install proved that wrong, see generic.ks's own
-comment for the correction.) At first boot there is exactly one job left:
-find whichever disk isn't the one that ended up as root (discovered
-dynamically via `findmnt`, not assumed -- this code doesn't actually care
-that the kickstart happens to hardcode /dev/vda, it would work the same
-if that ever changes), and turn it into /srv/data.
+The custom installer (installer_disks.py, replacing Anaconda entirely --
+see that module) already partitions and formats the bulk disk as part of
+first-install; this module's `main()` is idempotent against that (skips
+straight to mounting if a partition already exists) but also stands on
+its own -- `partition_and_format()` runs fresh if nothing did it already,
+which keeps the fast local qcow2 dev loop working (README's "Build /
+verify loop": boot the qcow2 directly with a second scratch disk attached,
+no installer involved at all).
+
+Nothing here assumes a specific disk size or device name for the ROOT
+disk either -- `_pick_bulk_disk()` finds whichever disk isn't the one
+that ended up as root, discovered dynamically via `findmnt`, not assumed.
 """
 from __future__ import annotations
 
@@ -56,7 +57,10 @@ def _pick_bulk_disk() -> str:
     return chosen
 
 
-def _partition_and_format(disk: str) -> str:
+def partition_and_format(disk: str) -> str:
+    """Single xfs partition spanning the whole disk. Public -- also called
+    by installer_disks.py during first-install, before this disk's root
+    filesystem even exists yet."""
     run(["parted", "--script", disk, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%"])
     run(["partprobe", disk])
     children = [d for d in _lsblk() if d.get("pkname") == Path(disk).name]
@@ -69,6 +73,11 @@ def _partition_and_format(disk: str) -> str:
     part = children[0]["path"]
     run(["mkfs.xfs", "-f", part])
     return part
+
+
+def _existing_partition(disk: str) -> str | None:
+    children = [d for d in _lsblk() if d.get("pkname") == Path(disk).name]
+    return children[0]["path"] if children else None
 
 
 def _fstab_mount(part: str) -> None:
@@ -88,7 +97,7 @@ def main() -> None:
         log.info("%s already mounted, nothing to do", DATA_MOUNT)
     else:
         disk = _pick_bulk_disk()
-        part = _partition_and_format(disk)
+        part = _existing_partition(disk) or partition_and_format(disk)
         _fstab_mount(part)
 
     for name in SERVICE_SUBDIRS:

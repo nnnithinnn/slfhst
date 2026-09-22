@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Fast local/CI check: byte-compile every slfhst .py file and make sure the
 package + every module imports cleanly. Not a substitute for the real
-qcow2/anaconda-iso verification loop in README.md, just a cheap first gate.
+qcow2/installer-iso verification loop in README.md, just a cheap first gate.
 """
 import compileall
 import sys
@@ -26,7 +26,8 @@ def main() -> int:
         ok = False
 
     import importlib
-    for name in ("common", "disks", "netconf", "wizard", "users", "totp",
+    for name in ("common", "disks", "installer_disks", "installer_deploy",
+                 "netconf", "wizard", "users", "totp",
                  "firewall", "quadlets", "backing", "dns_cf", "monitor",
                  "healthcheck", "deploy", "cli"):
         importlib.import_module(f"slfhst.{name}")

@@ -45,7 +45,23 @@ def run_wizard() -> dict:
     hostname = ask("Hostname (short, e.g. box1)")
     domain = ask("Domain (must already be on Cloudflare)", validate=lambda v: VALID_DOMAIN_RE.match(v))
     admin_user = ask("Admin username", default="admin")
-    pubkey = ask("Admin SSH public key (paste the full line)", validate=lambda v: VALID_PUBKEY_RE.match(v))
+
+    # Key is optional -- a password is always set for this account too (see
+    # totp.py/users.py), so a lost/unavailable key is never a lockout.
+    pubkey = ask("Admin SSH public key (paste the full line, blank to skip)",
+                 validate=lambda v: VALID_PUBKEY_RE.match(v), required=False)
+
+    print("\nAdmin account password (used for SSH login when no key is presented --")
+    print("TOTP is required either way). Blank = auto-generate and print once.")
+    admin_password = getpass.getpass("Password: ").strip()
+    if admin_password:
+        confirm = getpass.getpass("Confirm: ").strip()
+        if confirm != admin_password:
+            raise SystemExit("passwords didn't match")
+    else:
+        admin_password = common.gen_secret(12)
+        print(f"Generated admin password (write this down, shown once): {admin_password}")
+
     alert_email = ask("Email address for alerts (delivered via this box's own mail server)",
                        validate=lambda v: VALID_EMAIL_RE.match(v))
 
@@ -61,6 +77,7 @@ def run_wizard() -> dict:
         domain=domain,
         admin_user=admin_user,
         admin_pubkey=pubkey,
+        admin_password=admin_password,
         alert_email=alert_email,
         # Long-lived credential, kept alongside the other secrets in the
         # root-only (0600) config.json. Turned into an actual `podman

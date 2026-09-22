@@ -30,20 +30,24 @@ def _ensure_system_user(name: str) -> None:
     run(["useradd", "--system", "--create-home", "--shell", "/usr/sbin/nologin", name])
 
 
-def _ensure_admin_user(name: str, pubkey: str) -> None:
+def _ensure_admin_user(name: str, pubkey: str, password: str) -> None:
     if not _user_exists(name):
         run(["useradd", "--create-home", "--shell", "/bin/bash", "-G", "wheel", name])
-    run(["passwd", "-l", name])  # password login is disabled entirely; key+TOTP only
-    home = Path(pwd.getpwnam(name).pw_dir)
-    ssh_dir = home / ".ssh"
-    ssh_dir.mkdir(parents=True, exist_ok=True)
-    ssh_dir.chmod(0o700)
-    auth_keys = ssh_dir / "authorized_keys"
-    existing = auth_keys.read_text() if auth_keys.exists() else ""
-    if pubkey not in existing:
-        auth_keys.write_text(existing.rstrip("\n") + ("\n" if existing else "") + pubkey + "\n")
-    auth_keys.chmod(0o600)
-    run(["chown", "-R", f"{name}:{name}", str(ssh_dir)])
+    # Password is always set (never locked) -- it's a valid first factor on
+    # its own (password+TOTP) alongside pubkey+TOTP when a key exists too;
+    # see totp.py's PAM_SSHD_CONTENT for how the two paths actually differ.
+    run(["chpasswd"], input_text=f"{name}:{password}\n")
+    if pubkey:
+        home = Path(pwd.getpwnam(name).pw_dir)
+        ssh_dir = home / ".ssh"
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        ssh_dir.chmod(0o700)
+        auth_keys = ssh_dir / "authorized_keys"
+        existing = auth_keys.read_text() if auth_keys.exists() else ""
+        if pubkey not in existing:
+            auth_keys.write_text(existing.rstrip("\n") + ("\n" if existing else "") + pubkey + "\n")
+        auth_keys.chmod(0o600)
+        run(["chown", "-R", f"{name}:{name}", str(ssh_dir)])
 
 
 def _configure_rootless_storage(name: str) -> None:
@@ -77,9 +81,10 @@ def main() -> None:
 
     admin_user = cfg.get("admin_user", "admin")
     pubkey = cfg.get("admin_pubkey", "")
-    if not pubkey:
-        raise SystemExit("no admin_pubkey in config.json -- wizard step didn't complete")
-    _ensure_admin_user(admin_user, pubkey)
+    password = cfg.get("admin_password", "")
+    if not password:
+        raise SystemExit("no admin_password in config.json -- wizard step didn't complete")
+    _ensure_admin_user(admin_user, pubkey, password)
     run(["usermod", "-aG", "wheel", admin_user])
 
     log.info("service user %s and admin user %s ready", SERVICE_USER, admin_user)

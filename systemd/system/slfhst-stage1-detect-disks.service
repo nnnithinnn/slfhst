@@ -1,9 +1,11 @@
 [Unit]
-Description=slfhst stage1: partition/format/mount the bulk data disk
+Description=slfhst stage1: claim the bulk data disk (installer already partitioned it)
 # Idempotent: entire stage1 chain is a no-op once stage1.done exists, so the
-# image stays safe to reuse across reboots and repeat installs.
+# image stays safe to reuse across reboots and repeat installs. Also
+# idempotent against whether the installer already partitioned the bulk
+# disk (the normal case) or not (fast local qcow2 dev loop) -- see disks.py.
 ConditionPathExists=!/var/lib/slfhst/stage1.done
-After=local-fs.target slfhst-stage1-cleanup.service
+After=local-fs.target
 Before=slfhst-stage1-network.service
 
 [Service]

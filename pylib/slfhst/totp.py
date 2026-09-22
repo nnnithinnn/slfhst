@@ -1,4 +1,8 @@
-"""Stage1: SSH hardening -- key + mandatory PAM TOTP, console-only enrollment.
+"""Stage1: SSH hardening -- optional key, always mandatory PAM TOTP,
+console-only enrollment. A password is always a valid first factor
+(users.py sets one for every admin account, whether or not a key is
+also configured); a key, when present, lets TOTP be the only other
+factor needed instead of key+password+TOTP -- see PAM_SSHD_CONTENT.
 
 The QR code / secret / scratch codes are printed ONLY to the physical
 console (this unit owns tty1, same as the wizard) and never touch the
@@ -32,7 +36,15 @@ SSHD_DROPIN_CONTENT = dedent("""\
     PasswordAuthentication no
     UsePAM yes
     PermitRootLogin no
-    AuthenticationMethods publickey,keyboard-interactive:pam
+
+    # Key-based auth is optional (users.py doesn't require an admin pubkey
+    # any more): "publickey,keyboard-interactive:pam" and bare
+    # "keyboard-interactive:pam" are alternative method-sets -- either
+    # satisfies AuthenticationMethods. TOTP is mandatory either way, via
+    # keyboard-interactive:pam's PAM stack (see PAM_SSHD_CONTENT) -- what
+    # differs is whether that stack also demands a Unix password first,
+    # which it does UNLESS pubkey already succeeded (pam_ssh_auth_info.so).
+    AuthenticationMethods publickey,keyboard-interactive:pam keyboard-interactive:pam
 
     # Reduce the brute-force/resource-exhaustion budget: fewer auth
     # attempts per connection, less time to complete auth, and cap
@@ -66,12 +78,32 @@ SSHD_DROPIN_CONTENT = dedent("""\
     """)
 
 # Stock RHEL/AlmaLinux sshd PAM stack, with the `auth substack password-auth`
-# line replaced by pam_google_authenticator -- key+TOTP only, no Unix
-# password ever accepted, even via keyboard-interactive.
+# line replaced by: skip-if-pubkey-already-succeeded, else require the Unix
+# password, then always require TOTP either way.
+#
+# pam_ssh_auth_info.so (github.com/eehakkin/pam-ssh-auth-info, built from
+# source -- see Containerfile, no EL10/EPEL10 package exists yet) is what
+# makes "pubkey skips the password prompt, no pubkey means password is
+# required" actually possible: plain PAM has no way to see which SSH
+# AuthenticationMethods alternative is being satisfied (confirmed via
+# research, not assumed -- "there is no way to make PAM not ask for a
+# password ... when a key is correct" is a real, documented OpenSSH/PAM
+# limitation without a module like this one exposing SSH_AUTH_INFO_0 to
+# PAM). `any_of publickey` + `[success=1 default=ignore]` means: if
+# publickey already succeeded, skip the next line (the Unix password
+# check); otherwise fall through to it. TOTP is unconditional either way.
+#
+# Least-verified part of this whole redesign -- no hands-on test in this
+# sandbox. Confirm with `sshd -t`/`sshd -T` AND a real login test of BOTH
+# paths (key-only, and password-only with no key configured) before
+# trusting this, same discipline that caught the real sshd_config.d
+# ordering bug earlier in this project's history.
 PAM_SSHD_CONTENT = dedent("""\
     #%PAM-1.0
-    auth       required     pam_sepermit.so
-    auth       required     pam_google_authenticator.so
+    auth       required                     pam_sepermit.so
+    auth       [success=1 default=ignore]   pam_ssh_auth_info.so any_of publickey
+    auth       required                     pam_unix.so
+    auth       required                     pam_google_authenticator.so
     auth       include      postlogin
     account    required     pam_nologin.so
     account    include      password-auth
@@ -129,7 +161,7 @@ def main() -> None:
     _enroll_totp(admin_user)
     _configure_sshd()
     _configure_fail2ban()
-    log.info("SSH hardened: key + mandatory TOTP, fail2ban active")
+    log.info("SSH hardened: password (or key, if configured) + mandatory TOTP, fail2ban active")
 
 
 if __name__ == "__main__":

@@ -197,6 +197,28 @@ RUN dnf -y install epel-release && \
         parted \
     && dnf clean all
 
+# --- pam-ssh-auth-info: lets PAM see which SSH AuthenticationMethods
+# alternative already succeeded (pubkey or not), so totp.py's sshd PAM
+# stack can skip the Unix-password check for pubkey users without
+# requiring a key from everyone else -- see totp.py's own comment for why
+# this is needed at all (plain PAM has no way to see this on its own).
+# No EL10/EPEL10 package exists yet (confirmed via research), so built
+# from source; build-only deps removed again in the same layer.
+#
+# NOT pinned to a specific commit -- the upstream repo has no tagged
+# releases. Building `main` HEAD here is a known gap, not an oversight:
+# pin to a specific, reviewed commit SHA before relying on this for a
+# real deployment (see README's open items). Also unverified: that `make
+# install` actually drops pam_ssh_auth_info.so where PAM's default module
+# search path (/usr/lib64/security on this base) expects it -- confirm
+# before trusting this, same as totp.py's own PAM stack comment says.
+RUN dnf -y install gcc autoconf automake libtool pam-devel git && \
+    git clone https://github.com/eehakkin/pam-ssh-auth-info /tmp/pam-ssh-auth-info && \
+    cd /tmp/pam-ssh-auth-info && autoreconf --install && ./configure && make && make install && \
+    cd / && rm -rf /tmp/pam-ssh-auth-info && \
+    dnf -y remove gcc autoconf automake libtool git && \
+    dnf clean all
+
 # --- Rootless port publish for privileged ports (25/465/587/143/993/8443) ---
 # We do NOT lower net.ipv4.ip_unprivileged_port_start; firewalld forwards each
 # privileged port to a fixed unprivileged container-side port instead
@@ -233,7 +255,6 @@ RUN chmod 0755 /usr/libexec/slfhst/*.py /usr/bin/slfhst && \
         firewalld.service \
         podman-auto-update.timer \
         slfhst-stage1.target \
-        slfhst-stage2.target \
         slfhst-monitor.timer \
         slfhst-bootc-update.timer && \
     rm -rf /var/cache/dnf /var/cache/libdnf5 /var/lib/dnf \

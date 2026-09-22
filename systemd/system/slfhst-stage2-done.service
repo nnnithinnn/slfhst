@@ -1,9 +1,0 @@
-[Unit]
-Description=slfhst stage2: mark complete
-ConditionPathExists=!/var/lib/slfhst/stage2.done
-After=slfhst-stage2-healthcheck.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/libexec/slfhst/mark_done.py stage2

@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import common, dns_cf, firewall, monitor
+from . import backing, common, deploy, dns_cf, firewall, healthcheck, monitor, quadlets
 
 
 def cmd_status(_args) -> None:
@@ -46,6 +46,21 @@ def cmd_check_all(_args) -> None:
     monitor.check_all()
 
 
+def cmd_bootstrap(_args) -> None:
+    """Stage 2, run interactively over SSH by the admin (not an automatic
+    boot-time target any more -- see systemd/system/slfhst-stage1.target's
+    comment for why). Same modules stage2 always used, each already a
+    self-contained main() guarded by require_done_or_exit("stage1")
+    internally -- this is pure orchestration, no behavior change from what
+    ran automatically before as five separate oneshot services."""
+    quadlets.main()
+    deploy.main()
+    backing.main()
+    dns_cf.main()
+    healthcheck.main()
+    common.mark_done("stage2")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="slfhst", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -68,6 +83,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("check-all", help="run every check, email only if something needs attention") \
         .set_defaults(func=cmd_check_all)
+
+    sub.add_parser("bootstrap", help="stage 2: render quadlets, deploy, bootstrap backing services, sync DNS") \
+        .set_defaults(func=cmd_bootstrap)
 
     return p
 

@@ -2,14 +2,18 @@ name: Publish
 
 # Five steps, no more: precheck, build image, build ISO, publish image,
 # publish ISO. Every push to main runs all five -- no separate semver-tag-
-# gated release step, no GHCR round-trip in the middle. The ISO is built
-# straight from the image this same run just built locally (build_iso.py's
-# localhost/ path: podman save + sudo podman load into rootful storage,
-# no registry pull), not from whatever got pushed to GHCR -- so the ISO
-# build has no network dependency on this run's own GHCR push succeeding
-# first, and can't end up embedding a different image than what GHCR gets.
-# GHCR still gets the same image afterward, for already-running nodes'
-# `bootc upgrade` to track.
+# gated release step, no GHCR round-trip in the middle. "Build image"
+# builds both the appliance image AND the installer image layered on top
+# of it (Containerfile.installer -- a live, kickstart-free environment
+# that partitions disks and `bootc install`s the appliance image, see that
+# file's own comment for why Anaconda is gone entirely). The ISO is built
+# straight from the installer image this same run just built locally
+# (build_iso.py's localhost/ path: podman save + sudo podman load into
+# rootful storage, no registry pull) -- so the ISO build has no network
+# dependency on this run's own GHCR push succeeding first, and can't end
+# up embedding a different appliance image than what GHCR gets. GHCR still
+# gets the appliance image (not the installer image) afterward, for
+# already-running nodes' `bootc upgrade` to track.
 #
 # Verified end-to-end on a real GitHub-hosted runner -- see git history for
 # the fixes folded into the "Build image" step below (rootful bootc-image-
@@ -67,12 +71,18 @@ jobs:
 
           python3 scripts/build_image.py
 
-      # localhost/slfhst:latest -- the image build_image.py just produced,
-      # used directly (no GHCR round-trip). See build_iso.py's docstring
-      # for how it gets a rootless-podman-built local image into the
-      # rootful storage bootc-image-builder itself needs.
+          # Installer image (Containerfile.installer, FROM the appliance
+          # image just built above) -- the live, kickstart-free environment
+          # that partitions disks and `bootc install`s the appliance image.
+          # See scripts/build_installer_image.py's docstring.
+          python3 scripts/build_installer_image.py
+
+      # localhost/slfhst-installer:latest -- the image build_installer_image.py
+      # just produced, used directly (no GHCR round-trip). See
+      # build_iso.py's docstring for how it gets a rootless-podman-built
+      # local image into the rootful storage bootc-image-builder needs.
       - name: 3. Build ISO
-        run: python3 scripts/build_iso.py --type anaconda-iso --image localhost/slfhst:latest --output output
+        run: python3 scripts/build_iso.py --type bootc-generic-iso --output output
 
       - name: Diagnose failure (memory/kernel log)
         if: failure()

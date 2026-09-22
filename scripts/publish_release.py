@@ -8,14 +8,15 @@ offline install always grabs the ISO that matches the image built in the
 same run. `gh release create` errors on a tag that already has a release,
 so an existing one (release + its git tag) is deleted first.
 
-GitHub hard-caps a single release asset at 2GiB. The ISO comfortably fits
-under that -- measured at ~942MB for a real build (the Anaconda live
-installer environment and our embedded appliance image are both ~1.1-1.2GB
-individually, but bootc-image-builder's composefs/ostree-based storage
-deduplicates the large amount of file content they share, since both are
-built from overlapping EL10 packages). Still fails loudly rather than
-silently splitting/compressing if a future build ever grows past the
-limit, so that stays a visible decision, not a workaround.
+GitHub hard-caps a single release asset at 2GiB. Every Anaconda-based ISO
+build measured so far comfortably fit under that (~942MB-1.63GB); the
+current bootc-generic-iso-based ISO hasn't been measured yet (see README's
+"Publishing" section) but is a squashfs of the installer image plus
+kernel/initrd/EFI boot files plus the embedded appliance-image oci-archive
+-- structurally simpler than the old Anaconda live-installer-environment
+ISO, likely not larger. Still fails loudly rather than silently
+splitting/compressing if a future build ever grows past the limit, so
+that stays a visible decision, not a workaround.
 """
 from __future__ import annotations
 
@@ -50,9 +51,8 @@ def main() -> None:
 
     notes = (
         f"Bootc image: `{args.image}`.\n\n"
-        f"Generic Anaconda installer ISO ({size / 1e6:.0f}MB) -- see README "
-        f"for the first-boot wizard flow. Rebuilt on every push to main; "
-        f"always the current appliance image.\n"
+        f"Live installer ISO ({size / 1e6:.0f}MB) -- see README's \"Install flow\" "
+        f"section. Rebuilt on every push to main; always the current appliance image.\n"
     )
 
     if _release_exists(args.tag, args.repo):
