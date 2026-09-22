@@ -29,16 +29,25 @@ if not pool:
     raise SystemExit("no block devices found to install onto")
 boot_disk = pool[0]["path"]
 
-with open("/tmp/part-include.ks", "w") as f:
-    f.write(f"ignoredisk --only-use={boot_disk}\n")
+# Anaconda resolves %include while it's still scanning the document for
+# %pre blocks to run -- i.e. BEFORE this script has actually executed --
+# so a side file referenced via %include here doesn't exist yet and the
+# install aborts immediately ("Unable to open input kickstart file...
+# No such file or directory"). Found by testing a real ISO boot, not
+# assumed: the %pre+%include-a-side-file pattern looks standard but isn't
+# how Anaconda actually orders things. The real mechanism: Anaconda
+# re-reads /tmp/ks.cfg (the live kickstart file itself) from disk after
+# every %pre script finishes, and re-parses whatever's there -- so %pre
+# appends straight to the kickstart file in place instead of writing a
+# separate file for %include to pull in.
+with open("/tmp/ks.cfg", "a") as f:
+    f.write(f"\nignoredisk --only-use={boot_disk}\n")
     f.write("zerombr\n")
     f.write("clearpart --all --initlabel --disklabel=gpt\n")
     f.write(f"part /boot/efi --fstype=efi --size=512 --ondisk={boot_disk}\n")
     f.write(f"part /boot --fstype=xfs --size=1024 --ondisk={boot_disk}\n")
     f.write(f"part / --fstype=xfs --grow --size=1 --ondisk={boot_disk}\n")
 %end
-
-%include /tmp/part-include.ks
 
 text --non-interactive
 lang en_US.UTF-8
