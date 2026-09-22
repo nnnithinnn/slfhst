@@ -1,0 +1,13 @@
+[Unit]
+Description=slfhst stage1: remove the throwaway kickstart install account
+# Runs first, before networking -- the account (and its password) only
+# needs to survive long enough for Anaconda to see it satisfied, not one
+# second longer than that.
+ConditionPathExists=!/var/lib/slfhst/stage1.done
+After=local-fs.target
+Before=slfhst-stage1-detect-disks.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/slfhst/stage1_cleanup.py

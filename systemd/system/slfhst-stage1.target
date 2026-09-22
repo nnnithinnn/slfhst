@@ -1,8 +1,9 @@
 [Unit]
-Description=slfhst stage 1: disks, network, user, SSH+TOTP, firewall
+Description=slfhst stage 1: install-user cleanup, disks, network, user, SSH+TOTP, firewall
 # Wants+After (not just Wants) so this target only reports "active" once every
 # step has actually finished -- slfhst-stage2.target orders itself After= this
 # target and relies on that.
+Wants=slfhst-stage1-cleanup.service
 Wants=slfhst-stage1-detect-disks.service
 Wants=slfhst-stage1-network.service
 Wants=slfhst-stage1-wizard.service
@@ -10,6 +11,7 @@ Wants=slfhst-stage1-create-service-user.service
 Wants=slfhst-stage1-ssh-totp.service
 Wants=slfhst-stage1-firewall.service
 Wants=slfhst-stage1-done.service
+After=slfhst-stage1-cleanup.service
 After=slfhst-stage1-detect-disks.service
 After=slfhst-stage1-network.service
 After=slfhst-stage1-wizard.service
