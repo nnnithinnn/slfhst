@@ -27,9 +27,12 @@ build/verify loop.
 - `systemd/system/` -- the stage1/stage2 oneshot chains, plus
   `slfhst-monitor.timer` (health/DNSBL/Cloudflare-IP refresh, anomaly-only
   email) and `slfhst-bootc-update.timer` (weekly `bootc upgrade --apply`).
-- `kickstart/generic.ks` -- generic Anaconda kickstart (auto-detects the
-  boot disk via a Python `%pre`, `ignoredisk`s everything else so the bulk
-  disk is left for stage1 to claim).
+- `kickstart/generic.ks` -- generic Anaconda kickstart. Plain `autopart
+  --type=plain` (no `%pre`, no `ignoredisk` -- see the file's own comment
+  for why that changed after real installs falsified two `%pre`-based
+  fixes); `--type=plain` can't span multiple disks, so on a multi-disk box
+  it lands on one, and stage1's `disks.py` discovers whichever disk *isn't*
+  root at first boot and claims it as bulk storage.
 - `scripts/` -- `build_image.py` (podman build), `build_iso.py` (qcow2 or
   anaconda-iso via bootc-image-builder), `check.py` (byte-compile + import
   every module, what CI runs first).
@@ -151,6 +154,14 @@ Net result: **~1.94GB -> ~1.75GB** (`podman save` tarball size).
 
 ## Open items (not blocking, tracked so they don't get lost)
 
+- `kickstart/generic.ks`'s `autopart --type=plain` relies on `--type=plain`
+  being unable to span multiple disks (so a two-disk box can't have both
+  disks silently consumed by the OS install) -- this is standard pykickstart
+  behavior, not something specific to our setup, but hasn't been directly
+  confirmed on a real two-disk boot yet. If it ever *did* span both disks,
+  `disks.py`'s "largest non-root disk becomes bulk storage" logic would find
+  nothing left to claim -- watch for that specifically on the next real
+  install rather than assuming this is settled.
 - Image tags are now pinned (2026-09-22 pass): `stalwartlabs/stalwart:v0.16.20`,
   `vaultwarden/server:1.37.2`, `bulwarkmail/webmail:1.10.0`,
   `dxflrs/garage:v1.0.1`, `postgres:16-alpine`, `traefik:v3.3`. Ente's

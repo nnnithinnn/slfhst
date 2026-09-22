@@ -15,8 +15,8 @@ from .common import log, run
 INSTALL_USER = "kspending"
 
 # Anaconda leaves a copy of the kickstart it installed from on disk,
-# including our generated --plaintext password -- scrub it too, not just
-# the account itself.
+# including the static throwaway --plaintext password -- scrub it too,
+# not just the account itself.
 LEFTOVER_KICKSTART_COPIES = (
     Path("/root/anaconda-ks.cfg"),
     Path("/root/original-ks.cfg"),
