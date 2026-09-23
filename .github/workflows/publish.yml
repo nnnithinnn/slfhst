@@ -78,7 +78,22 @@ jobs:
           sudo podman run --rm --privileged -v "$PWD:/work:Z" -w /work \
             registry.fedoraproject.org/fedora:44 bash -c "
               set -euo pipefail
-              dnf -y install mkosi xorriso grub2-tools-extra
+              # grub2-tools-extra alone ships grub2-mkrescue but none of the
+              # actual GRUB platform boot images it needs -- confirmed by
+              # boot-testing a real built ISO under QEMU (both BIOS/SeaBIOS
+              # and UEFI/OVMF failed to boot it) and tracing it to
+              # /usr/lib/grub/ being completely empty on this exact package
+              # set. grub2-mkrescue does NOT error when those are missing;
+              # it silently emits a structurally valid but non-bootable El
+              # Torito record. mkosi/installer/mkosi.conf already installs
+              # these into the installer's own root for other reasons, but
+              # build-iso.sh's grub2-mkrescue call runs on THIS outer
+              # container, not chrooted into that root, so they have to be
+              # installed here too.
+              dnf -y install mkosi xorriso grub2-tools-extra \
+                grub2-pc grub2-pc-modules \
+                grub2-efi-x64 grub2-efi-x64-modules grub2-efi-x64-cdboot \
+                shim-x64
               ./mkosi/build-all.sh '$DATE_TAG' output
             "
 
