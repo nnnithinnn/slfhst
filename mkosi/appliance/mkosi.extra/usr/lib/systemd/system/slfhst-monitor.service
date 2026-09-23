@@ -1,0 +1,7 @@
+[Unit]
+Description=slfhst periodic check-all
+ConditionPathExists=/var/lib/slfhst/stage2.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/slfhst check-all

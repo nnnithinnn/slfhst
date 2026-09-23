@@ -1,0 +1,51 @@
+#!/bin/bash
+# Builds pam_ssh_auth_info.so from source -- no packaged EL10/Fedora
+# build exists, and upstream has no tagged releases, so this has always
+# been a from-source build (see internal/totp's package doc comment).
+#
+# Pinned to a real commit for the first time in this project's history:
+# 86031f4be412bd58aef6fe2199bdb2013aa20f2e (2025-04-21). Not arbitrary --
+# that's the commit that renamed the module's PAM options to
+# any_of/all_of, and internal/totp.go's PAM stack already uses
+# `pam_ssh_auth_info.so any_of publickey`. Pinning older would silently
+# break against an option name the module doesn't recognize; pinning
+# newer needs re-checking this same thing.
+#
+# mkosi.prepare (this file, .chroot suffix -> chrooted with normal
+# filesystem write access) is the one script mkosi's own docs explicitly
+# grant network access to -- needed for `git clone`. Confirmed for real
+# after two other approaches failed: mkosi.build.chroot + BuildPackages=
+# hit mkosi's own internal sandbox mount bug (see mkosi.conf's comment on
+# the Packages= build-deps entries for the full story, including why
+# those deps couldn't be cleaned up afterward either -- dnf5 is never
+# actually installed into the target image at all).
+#
+# Called with $1=final after regular packages install (no mkosi.build
+# script exists in this project, so the $1=build second-invocation case
+# mkosi's docs describe never happens here -- guard on it anyway, in
+# case a build script is ever added later). Build deps (gcc etc.) are
+# plain Packages= in mkosi.conf, already present by the time this runs --
+# this script only builds and installs, no package management.
+set -euo pipefail
+
+if [ "${1:-}" != final ]; then
+    exit 0
+fi
+
+git clone https://github.com/eehakkin/pam-ssh-auth-info /tmp/pam-ssh-auth-info
+cd /tmp/pam-ssh-auth-info
+git checkout 86031f4be412bd58aef6fe2199bdb2013aa20f2e
+autoreconf --install
+# --prefix/--libdir matter: a plain `./configure` installs to
+# /usr/local/lib/security (autotools' default prefix), NOT
+# /usr/lib64/security where PAM's default module search path actually
+# looks on this (RPM-based, 64-bit) system -- confirmed for real by a
+# first build that completed with no errors but silently put the module
+# somewhere PAM would never find it. This was flagged as an unverified
+# risk in this project's history since the very first Containerfile;
+# now actually caught and fixed, not just flagged.
+./configure --prefix=/usr --libdir=/usr/lib64
+make
+make install
+cd /
+rm -rf /tmp/pam-ssh-auth-info

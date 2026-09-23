@@ -1,0 +1,10 @@
+[Unit]
+Description=Run slfhst health/DNSBL/Cloudflare-IP checks periodically
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

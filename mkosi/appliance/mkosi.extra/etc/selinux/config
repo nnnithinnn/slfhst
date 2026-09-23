@@ -1,0 +1,8 @@
+# slfhst: SELinux enforcing by default -- confining rootless Podman
+# containers (container_t/container_file_t via container-selinux) is the
+# whole point, see the plan's "SELinux hardening" section. Enforcing-mode
+# behavior itself is unverified in this dev sandbox (no SELinux-capable
+# kernel here at all) -- confirm on real hardware/a real VM, don't trust
+# this file alone.
+SELINUX=enforcing
+SELINUXTYPE=targeted

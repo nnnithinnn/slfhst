@@ -4,3 +4,13 @@ config.generated.toml
 output/
 .claude/
 .serena/
+
+# Built by CI (or locally, for testing) before invoking mkosi -- see the
+# plan's Milestone A. Never committed; mkosi.extra/ is a skeleton tree,
+# not a place to check in build output.
+/mkosi/appliance/mkosi.extra/usr/bin/slfhst
+/mkosi/installer/mkosi.extra/usr/bin/slfhst
+*.raw
+*.efi
+*.iso
+

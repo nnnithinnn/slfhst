@@ -12,18 +12,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
-      - name: Byte-compile + import every slfhst module
-        run: python3 scripts/check.py
+          go-version: "1.24"
+      - name: Build every package
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
 
-  build:
+  # Appliance-only smoke build (not the installer/ISO -- that's
+  # publish.yml's job, kept slower there). Validates mkosi.conf package
+  # resolution + the pam-ssh-auth-info build hook on every PR. Runs
+  # inside a privileged Fedora container, never on the bare runner --
+  # same cross-distro pattern this repo's build history has always used
+  # (ubuntu-latest isn't RPM-based; every dnf/mkosi-shaped step happens
+  # inside a container built from an RPM-based image instead).
+  build-appliance:
     runs-on: ubuntu-latest
     needs: check
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Build the slfhst binary
+        run: go build -o mkosi/appliance/mkosi.extra/usr/bin/slfhst ./cmd/slfhst
       - name: Install podman
         run: sudo apt-get update && sudo apt-get install -y podman
-      - name: podman build
-        run: python3 scripts/build_image.py
+      - name: mkosi appliance build (smoke check)
+        run: |
+          podman run --rm --privileged -v "$PWD:/work:Z" -w /work/mkosi/appliance \
+            registry.fedoraproject.org/fedora:44 bash -c '
+              set -euo pipefail
+              dnf -y install mkosi
+              mkosi --image-version=ci-pr-smoke -f build
+            '

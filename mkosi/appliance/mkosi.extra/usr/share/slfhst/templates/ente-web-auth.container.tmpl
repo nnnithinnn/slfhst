@@ -1,0 +1,16 @@
+# ghcr.io/ente (org renamed from ente-io, GHCR doesn't redirect the old
+# path) on :latest deliberately -- see museum.container.tmpl's comment.
+[Unit]
+Description=Ente web -- Auth (TOTP)
+After=slfhst-network.network museum.service
+Requires=museum.service
+
+[Container]
+Image=ghcr.io/ente/web:latest
+AutoUpdate=registry
+Network=slfhst-network.network
+Environment=NEXT_PUBLIC_ENTE_ENDPOINT=https://${API_HOST}
+Environment=ENTE_APP=auth
+
+[Service]
+Restart=always

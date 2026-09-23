@@ -1,0 +1,7 @@
+[Unit]
+Description=slfhst OS update apply
+ConditionPathExists=/var/lib/slfhst/stage2.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/slfhst update apply

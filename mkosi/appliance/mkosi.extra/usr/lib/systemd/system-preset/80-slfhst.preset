@@ -1,0 +1,19 @@
+# Default enablement for a fresh install, applied once by the installer
+# via `systemctl preset-all --root=<target>` (see internal/installer.go)
+# -- NOT `systemctl enable` at image-build time, which would try to write
+# enablement symlinks under /etc/systemd/system/, and /etc lives on the
+# persistent root partition, not this swappable usr content at all.
+# Confirmed the hard way this session: a mkosi.postinst.chroot script
+# running `systemctl enable` built successfully but silently produced no
+# symlinks anywhere inspectable in the usr partition, because they'd have
+# gone into a /etc this build doesn't even produce.
+#
+# Preset files are the correct systemd-native mechanism for "what should
+# be enabled on a freshly-populated /etc" and are update-safe: a later
+# usr update can ship a new preset line for a newly-added service without
+# touching a running system's already-materialized /etc state (so it
+# won't silently re-enable something an admin deliberately disabled).
+enable firewalld.service
+enable podman-auto-update.timer
+enable slfhst-monitor.timer
+enable slfhst-update.timer

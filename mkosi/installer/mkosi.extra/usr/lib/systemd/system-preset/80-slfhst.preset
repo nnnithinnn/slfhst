@@ -1,0 +1,8 @@
+# Real finding, confirmed this session: mkosi runs `systemctl preset-all`
+# itself as one of its own final build steps -- a plain `systemctl
+# enable` in a postinst script gets silently undone by that (confirmed:
+# "Removed '/buildroot/etc/.../slfhst-install.service'" in a real build
+# log). A preset file is what actually survives, same lesson already
+# learned for the appliance build's own units -- consistent mechanism,
+# not a special case.
+enable slfhst-install.service

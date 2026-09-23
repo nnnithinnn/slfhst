@@ -1,0 +1,14 @@
+# JMAP webmail UI for Stalwart.
+[Unit]
+Description=Bulwark webmail
+After=slfhst-network.network stalwart.service
+Requires=stalwart.service
+
+[Container]
+Image=ghcr.io/bulwarkmail/webmail:1.10.0
+AutoUpdate=registry
+Network=slfhst-network.network
+Environment=JMAP_URL=http://stalwart:8080/jmap
+
+[Service]
+Restart=always

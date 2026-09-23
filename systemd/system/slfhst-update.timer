@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily slfhst OS update check+apply (boot-counting rollback is the safety net for this cadence -- see the plan's "Update cadence" section)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

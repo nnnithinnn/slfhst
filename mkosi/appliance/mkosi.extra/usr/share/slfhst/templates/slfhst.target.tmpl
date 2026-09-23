@@ -1,0 +1,7 @@
+[Unit]
+Description=slfhst application stack
+Wants=traefik.service postgres.service garage.service stalwart.service bulwark.service museum.service ente-web-photos.service ente-web-auth.service ente-web-locker.service vaultwarden.service
+After=traefik.service postgres.service garage.service stalwart.service bulwark.service museum.service ente-web-photos.service ente-web-auth.service ente-web-locker.service vaultwarden.service
+
+[Install]
+WantedBy=default.target
