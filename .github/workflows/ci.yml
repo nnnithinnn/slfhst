@@ -15,6 +15,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+          cache: false # no go.sum -- stdlib-only, zero external deps
       - name: Build every package
         run: go build ./...
       - name: Vet
@@ -37,6 +38,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+          cache: false
       - name: Build the slfhst binary
         run: go build -o mkosi/appliance/mkosi.extra/usr/bin/slfhst ./cmd/slfhst
       - name: Install podman

@@ -103,13 +103,21 @@ func TestCreateRequiresPassword(t *testing.T) {
 
 func TestWriteAuthorizedKeysIdempotent(t *testing.T) {
 	root := t.TempDir()
-	writeFakePasswd(t, root, map[string][2]int{"admin": {1000, 1000}})
+	// chown to the test process's own uid/gid -- os.Chown to an
+	// arbitrary uid requires CAP_CHOWN (this test may run
+	// unprivileged), but chowning a file to yourself is always
+	// permitted. A hardcoded 1000 here worked locally by coincidence
+	// (that sandbox's own user happened to be uid 1000) and failed for
+	// real on GitHub's runner (a different uid) -- same fix already
+	// applied correctly in TestWriteRootlessStorageConf, missed here.
+	uid, gid := os.Getuid(), os.Getgid()
+	writeFakePasswd(t, root, map[string][2]int{"admin": {uid, gid}})
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI test@example"
 
-	if err := writeAuthorizedKeys(root, "admin", 1000, 1000, key); err != nil {
+	if err := writeAuthorizedKeys(root, "admin", uid, gid, key); err != nil {
 		t.Fatalf("writeAuthorizedKeys: %v", err)
 	}
-	if err := writeAuthorizedKeys(root, "admin", 1000, 1000, key); err != nil {
+	if err := writeAuthorizedKeys(root, "admin", uid, gid, key); err != nil {
 		t.Fatalf("writeAuthorizedKeys (second call): %v", err)
 	}
 
