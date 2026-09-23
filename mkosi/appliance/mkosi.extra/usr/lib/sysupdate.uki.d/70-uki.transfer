@@ -1,0 +1,46 @@
+# The UKI deployed onto the ESP -- tracked as its own systemd-sysupdate
+# component ("uki", from this directory's sysupdate.uki.d name) rather
+# than folded into the usr partition transfer, so it gets its own
+# boot-counting (TriesLeft=/TriesDone=, encoded in the on-disk filename
+# via @l/@d) and rollback lifecycle independent of the usr A/B swap.
+# Reported over D-Bus as class="component" name="uki" --
+# internal/sysupdate.go's managedTargets()/isUKI() relies on that exact
+# pairing. Published from the same versioned release as 50-usr.transfer
+# (mkosi/build-all.sh embeds matching slfhst_<version>.usr.raw and
+# slfhst_<version>.efi in one publish.yml run), so in normal operation
+# both targets have a new version available at the same time.
+
+# systemd's .ini-style config parser does not support trailing inline
+# comments (confirmed by testing: `Verify=no # comment` on one line
+# failed to parse with "Invalid argument") -- comments must be their own
+# line.
+[Transfer]
+# publish.yml doesn't generate a SHA256SUMS.gpg signature (yet) -- see
+# 50-usr.transfer's [Transfer] comment for the same note.
+Verify=no
+
+[Source]
+Type=url-file
+Path=https://github.com/nnnithinnn/slfhst/releases/download/latest/
+MatchPattern=slfhst_@v.efi
+
+[Target]
+Type=regular-file
+Path=/EFI/Linux
+PathRelativeTo=boot
+# A multi-value key continues onto following lines only with a trailing
+# backslash (confirmed by testing: bare indentation alone produced
+# "Missing '=', ignoring line" for the continuation lines). Three
+# patterns, most-specific first: a filename already carrying both
+# boot-counting fields (the normal case once sysupdate has managed this
+# component through at least one boot), one carrying only @l (written
+# but not yet boot-confirmed), and the bare installer-written filename
+# with no boot-counting suffix at all (the very first update ever,
+# before sysupdate has managed this component).
+MatchPattern=slfhst_@v+@l-@d.efi \
+             slfhst_@v+@l.efi \
+             slfhst_@v.efi
+Mode=0444
+TriesLeft=3
+TriesDone=0
+InstancesMax=2

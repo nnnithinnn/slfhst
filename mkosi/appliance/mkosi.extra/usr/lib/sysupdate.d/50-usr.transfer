@@ -1,0 +1,34 @@
+# The usr A/B partition swap -- the appliance's own OS content update,
+# driving into whichever slot currently carries systemd-repart's
+# `_empty` label (see internal/disks.PartitionRoot). This is the
+# component-less/default transfer, so systemd-sysupdate reports it as
+# the "host" class target over D-Bus -- internal/sysupdate.go's
+# managedTargets() relies on that exact class string.
+#
+# Confirmed via DeepWiki against systemd's own source
+# (sysupdate-resource.c's download_manifest(), sysupdate.d(5)):
+# Type=url-file does NOT scrape an HTML directory listing -- it fetches
+# a SHA256SUMS manifest at <Path>/SHA256SUMS (the same file
+# publish.yml already generates and uploads) and matches MatchPattern=
+# against its filenames. GitHub's rolling "latest" release tag serves
+# exactly that shape at a stable URL, so no manifest-indirection
+# workaround is needed.
+
+[Transfer]
+# publish.yml doesn't generate a SHA256SUMS.gpg signature (yet) -- Verify=no
+# skips the GPG layer but sysupdate still unconditionally SHA256-checks
+# every downloaded file against SHA256SUMS regardless of this setting, so
+# integrity checking isn't lost, just the signing layer. Revisit once
+# publish.yml signs the manifest.
+Verify=no
+
+[Source]
+Type=url-file
+Path=https://github.com/nnnithinnn/slfhst/releases/download/latest/
+MatchPattern=slfhst_@v.usr.raw
+
+[Target]
+Type=partition
+Path=auto
+MatchPattern=slfhst_@v
+MatchPartitionType=usr
