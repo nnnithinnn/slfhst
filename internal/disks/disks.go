@@ -54,6 +54,7 @@ type blockDevice struct {
 	Size   json.Number `json:"size"`
 	Type   string      `json:"type"`
 	Rota   lsblkBool   `json:"rota"`
+	RO     lsblkBool   `json:"ro"`
 	PKName string      `json:"pkname"`
 }
 
@@ -133,7 +134,7 @@ func bootDiskName(all []blockDevice) (string, error) {
 // never the installer's own boot device, see bootDiskName above.
 // Direct port of installer_disks.py's select_disks().
 func SelectDisks() (rootDisk, bulkDisk string, err error) {
-	all, err := listBlockDevices("NAME,PATH,SIZE,TYPE,ROTA,PKNAME")
+	all, err := listBlockDevices("NAME,PATH,SIZE,TYPE,ROTA,RO,PKNAME")
 	if err != nil {
 		return "", "", err
 	}
@@ -148,10 +149,24 @@ func SelectDisks() (rootDisk, bulkDisk string, err error) {
 // tests can exercise it against fixed lsblk-shaped input instead of a
 // real `lsblk`/`blkid` call. excludeName is the boot device's own
 // lsblk NAME (see bootDiskName) -- never selected as root or bulk.
+//
+// Read-only devices (RO) are excluded unconditionally, not just the
+// labeled boot device -- confirmed a second, distinct real bug on real
+// hardware after the bootDiskName fix above: a BMC/IPMI-style remote
+// console can attach more than one virtual-media device (here, a
+// 368K-sized read-only /dev/sda alongside the actual labeled ISO on
+// /dev/sr0), and only the labeled device was being excluded. The tiny
+// unlabeled one still had TYPE="disk" and, being far smaller than any
+// real target disk, still won "smallest disk" -- selected as root, then
+// systemd-repart failed outright with "Read-only file system". A
+// read-only device can never be a valid install target regardless of
+// whether it happens to carry this project's own ISO label, so
+// filtering on RO directly is the general fix, not a narrower one
+// scoped to this specific device.
 func selectDisksFrom(all []blockDevice, excludeName string) (rootDisk, bulkDisk string, err error) {
 	var candidates []blockDevice
 	for _, d := range all {
-		if d.Type == "disk" && sizeOf(d) > 0 && (excludeName == "" || d.Name != excludeName) {
+		if d.Type == "disk" && sizeOf(d) > 0 && !bool(d.RO) && (excludeName == "" || d.Name != excludeName) {
 			candidates = append(candidates, d)
 		}
 	}

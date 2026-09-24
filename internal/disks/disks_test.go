@@ -137,6 +137,33 @@ func TestSelectDisksFromExcludesBootDeviceWhenOnlyTwoDisksRemain(t *testing.T) {
 	}
 }
 
+// TestSelectDisksFromExcludesReadOnlyDevices is a regression test for a
+// real bug found on real hardware, distinct from the labeled-boot-device
+// exclusion above: a BMC/IPMI-style remote console attached a second,
+// unlabeled, tiny (368K) read-only virtual-media device alongside the
+// actual labeled ISO -- only the labeled device was being excluded, so
+// this unlabeled one still won "smallest disk" and got selected as
+// root, and systemd-repart then failed outright with "Read-only file
+// system". No read-only device can ever be a valid install target, so
+// RO is filtered unconditionally, not just for the known boot label.
+func TestSelectDisksFromExcludesReadOnlyDevices(t *testing.T) {
+	all := []blockDevice{
+		{Name: "sda", Path: "/dev/sda", Type: "disk", Size: "368640", Rota: false, RO: true}, // unlabeled RO virtual media, smallest -- must be excluded
+		{Name: "vda", Path: "/dev/vda", Type: "disk", Size: "21474836480", Rota: false},      // 20G, writable -- real root
+		{Name: "vdb", Path: "/dev/vdb", Type: "disk", Size: "107374182400", Rota: false},     // 100G, writable -- real bulk
+	}
+	root, bulk, err := selectDisksFrom(all, "")
+	if err != nil {
+		t.Fatalf("selectDisksFrom: %v", err)
+	}
+	if root != "/dev/vda" {
+		t.Errorf("root = %q, want /dev/vda (read-only device sda must be excluded despite being smallest)", root)
+	}
+	if bulk != "/dev/vdb" {
+		t.Errorf("bulk = %q, want /dev/vdb", bulk)
+	}
+}
+
 // TestEnsureFHSSymlinks is a regression test for a real, severe bug
 // found by actually running the installer end to end: nothing in this
 // project's split root/usr DPS design ever created these symlinks, so
