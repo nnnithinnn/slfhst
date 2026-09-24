@@ -247,7 +247,23 @@ func PartitionRoot(disk string) error {
 		}
 	}
 
-	_, err = runx.Run([]string{"systemd-repart", "--definitions=" + dir, "--dry-run=no", "--empty=allow", disk},
+	// --empty=force, not "allow": confirmed via DeepWiki against
+	// systemd's own source (context_load_partition_table /
+	// context_wipe_range in src/repart/repart.c) after a real,
+	// install-blocking failure on real hardware -- "allow" only creates
+	// a fresh GPT table when the disk has none at all; if a GPT table
+	// already exists (the real target arrived pre-partitioned by the
+	// VPS provider's own default image, confirmed via the user's lsblk
+	// output showing four pre-existing partitions consuming the whole
+	// disk), "allow" operates on it incrementally, trying to fit new
+	// partitions into whatever free space is left -- which failed here
+	// with "Can't fit requested partitions into available free space
+	// (1.9M)". "force" unconditionally wipes the entire disk and starts
+	// from a fresh GPT table regardless of what was there before -- the
+	// correct behavior here, not a workaround: this is SelectDisks'
+	// already-chosen ROOT disk, whose whole purpose is to become the
+	// appliance's root disk from scratch.
+	_, err = runx.Run([]string{"systemd-repart", "--definitions=" + dir, "--dry-run=no", "--empty=force", disk},
 		runx.Options{Capture: true})
 	if err != nil {
 		return fmt.Errorf("disks: systemd-repart %s: %w", disk, err)
