@@ -7,12 +7,23 @@
 # not a special case.
 enable slfhst-install.service
 
-# Real finding from actually boot-testing the ISO under QEMU: base
-# systemd's own systemd-firstboot.service runs its interactive
-# "Initial Setup" wizard (timezone/root password prompts) on tty1
-# before slfhst-install.service gets a chance to -- this project's own
-# installer already handles all of that through its own flow, so
-# Fedora's generic one is pure noise here, not a fallback worth keeping.
-# Lower-numbered preset files win ties, so this line (in 80-*) overrides
-# whatever base systemd's own 90-systemd.preset says for this unit.
+# Base systemd's own systemd-firstboot.service runs its interactive
+# "Initial Setup" wizard (timezone/root password prompts) on tty1 before
+# slfhst-install.service gets a chance to -- this project's own installer
+# already handles all of that through its own flow, so Fedora's generic
+# one is pure noise here, not a fallback worth keeping.
+#
+# A `disable` preset line here does NOT stop it, confirmed by real
+# boot-testing (both under QEMU and on real hardware -- it still ran):
+# systemd-firstboot.service is enabled via a symlink shipped directly by
+# the systemd package itself
+# (usr/lib/systemd/system/sysinit.target.wants/systemd-firstboot.service),
+# not via a preset-controlled /etc/systemd/system/*.wants/ entry --
+# `systemctl preset-all` only ever writes/removes the latter, so it can
+# never undo a package's own static Wants symlink. The actual fix is a
+# real mask: mkosi.extra/etc/systemd/system/systemd-firstboot.service is
+# a symlink to /dev/null (same as `systemctl mask` would create), which
+# takes precedence over any Wants symlink regardless of where it lives.
+# Kept here anyway since it's harmless and correct in spirit, just not
+# what actually does the job.
 disable systemd-firstboot.service
