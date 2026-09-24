@@ -1,9 +1,4 @@
-// Package installer is the live-ISO entrypoint (`slfhst install`). Ties
-// together internal/disks, internal/netconf, internal/wizard,
-// internal/users, internal/totp, and internal/firewall's pre-boot path
-// -- every one of which is real, independently-verified code as of this
-// pass (see the plan's Phase 0 notes and "Next stage" section for exactly
-// how each piece was confirmed against a real environment).
+// Package installer is the live-ISO entrypoint (`slfhst install`).
 package installer
 
 import (
@@ -16,7 +11,7 @@ import (
 	"github.com/nnnithinnn/slfhst/internal/firewall"
 	"github.com/nnnithinnn/slfhst/internal/netconf"
 	"github.com/nnnithinnn/slfhst/internal/prompt"
-	"github.com/nnnithinnn/slfhst/internal/totp"
+	"github.com/nnnithinnn/slfhst/internal/sshauth"
 	"github.com/nnnithinnn/slfhst/internal/users"
 	"github.com/nnnithinnn/slfhst/internal/wizard"
 )
@@ -29,15 +24,6 @@ const mountpoint = "/mnt/target"
 // package doesn't need to parse mkosi's naming convention.
 const applianceDir = "/usr/share/slfhst/appliance"
 
-// Run drives the installer flow end to end: disk selection, DPS
-// partitioning of the root disk, deploying the embedded appliance
-// content + bootloader, the bulk disk, then stage1 setup (network,
-// wizard, users, SSH+TOTP, firewall) against the mounted target --
-// almost entirely target-path-prefixed operations, no chroot, except
-// totp.Configure's internal `chroot ... sshd -t` validation step (which
-// needs internal/disks.MountUsr's real /usr content to find `sshd` at
-// all -- confirmed this session against actual built appliance content,
-// not a bind-mount stand-in).
 func Run() error {
 	prompt.Banner("slfhst installer")
 
@@ -98,7 +84,7 @@ func Run() error {
 		return err
 	}
 
-	cfg, err := wizard.Run(store)
+	cfg, err := wizard.RunPreBoot(store)
 	if err != nil {
 		return err
 	}
@@ -107,8 +93,7 @@ func Run() error {
 		return err
 	}
 
-	adminUser, _ := cfg["admin_user"].(string)
-	if err := totp.Configure(mountpoint, adminUser); err != nil {
+	if err := sshauth.Configure(mountpoint); err != nil {
 		return err
 	}
 
@@ -135,7 +120,7 @@ func Run() error {
 
 	fmt.Println()
 	fmt.Println("stage1 setup complete. Reboot to continue, then SSH in")
-	fmt.Println("(with TOTP) and run `slfhst bootstrap`.")
+	fmt.Println("as the admin user and run `slfhst setup`.")
 	return nil
 }
 

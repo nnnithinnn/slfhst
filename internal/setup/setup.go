@@ -1,31 +1,35 @@
-// Package bootstrap orchestrates stage2 -- render quadlets, pull+start
-// containers, bootstrap Garage/Postgres/Stalwart, sync Cloudflare DNS,
-// write the MOTD. Admin-run over SSH once stage1 (now part of the
-// installer) has completed. Direct port of cli.py's cmd_bootstrap.
-package bootstrap
+package setup
 
 import (
+	"fmt"
+
 	"github.com/nnnithinnn/slfhst/internal/backing"
 	"github.com/nnnithinnn/slfhst/internal/config"
 	"github.com/nnnithinnn/slfhst/internal/deploy"
 	"github.com/nnnithinnn/slfhst/internal/dnscf"
+	"github.com/nnnithinnn/slfhst/internal/firewall"
 	"github.com/nnnithinnn/slfhst/internal/healthcheck"
 	"github.com/nnnithinnn/slfhst/internal/quadlet"
+	"github.com/nnnithinnn/slfhst/internal/sysupdate"
+	"github.com/nnnithinnn/slfhst/internal/wizard"
 )
 
-// Run executes stage2 in order, matching cli.py's cmd_bootstrap:
-// quadlets -> deploy -> backing -> dnscf -> healthcheck -> mark stage2
-// done. Each step already guards on stage1 being done itself (same
-// require_done_or_exit convention as the Python), and each is
-// independently idempotent, so re-running Run after a partial failure
-// is safe.
 func Run(store config.Store) error {
 	if err := store.RequireDone("stage1"); err != nil {
 		return err
 	}
-	cfg, err := store.Load()
+
+	cfg, err := wizard.RunPostBoot(store)
 	if err != nil {
 		return err
+	}
+
+	if err := firewall.SyncCloudflareIPSets(); err != nil {
+		return err
+	}
+
+	if err := sysupdate.Check(); err != nil {
+		fmt.Println("update check failed:", err)
 	}
 
 	if err := quadlet.EnsureSecrets(cfg); err != nil {

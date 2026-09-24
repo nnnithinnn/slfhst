@@ -25,9 +25,6 @@ func writeMOTD(cfg map[string]any) error {
   Photos: https://photos.%[1]s
   Auth:   https://auth.%[1]s
   Locker: https://locker.%[1]s
-
-TOTP enrollment was shown once on the console during setup and isn't
-stored anywhere else -- if you lost it, re-enroll via google-authenticator.
 `, domain)
 
 	if err := os.MkdirAll(filepath.Dir(motdFile), 0o755); err != nil {

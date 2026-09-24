@@ -43,6 +43,11 @@ var mailRateLimits = []struct {
 	{25, "20/m"}, {465, "20/m"}, {993, "20/m"}, {manageSievePort, "20/m"},
 }
 
+const (
+	sshPort      = 22
+	sshRateLimit = "10/m"
+)
+
 // SetupPreBoot authors firewalld's permanent config directly under
 // root/etc/firewalld/ -- the pre-boot equivalent of firewall.py's
 // setup(), run once by the installer before reboot.
@@ -91,7 +96,6 @@ func writeZoneXML(root string) error {
 	b.WriteString("<zone>\n")
 	b.WriteString("  <short>Public</short>\n")
 	b.WriteString("  <description>slfhst: public zone, ports scoped to what this appliance actually serves.</description>\n")
-	b.WriteString("  <service name=\"ssh\"/>\n")
 
 	for _, fw := range mailForwards {
 		fmt.Fprintf(&b, "  <port port=\"%d\" protocol=\"tcp\"/>\n", fw.public)
@@ -109,11 +113,14 @@ func writeZoneXML(root string) error {
 		b.WriteString("  </rule>\n")
 	}
 
-	// Mail ports: directly internet-exposed (Cloudflare doesn't proxy
-	// raw SMTP/IMAPS), so rate-limit instead of ipset-restrict.
 	for _, family := range []string{"ipv4", "ipv6"} {
+		fmt.Fprintf(&b, "  <rule family=\"%s\" priority=\"-10\">\n", family)
+		fmt.Fprintf(&b, "    <port port=\"%d\" protocol=\"tcp\"/>\n", sshPort)
+		fmt.Fprintf(&b, "    <accept>\n      <limit value=\"%s\"/>\n    </accept>\n", sshRateLimit)
+		b.WriteString("  </rule>\n")
+
 		for _, rl := range mailRateLimits {
-			fmt.Fprintf(&b, "  <rule family=\"%s\">\n", family)
+			fmt.Fprintf(&b, "  <rule family=\"%s\" priority=\"-10\">\n", family)
 			fmt.Fprintf(&b, "    <port port=\"%d\" protocol=\"tcp\"/>\n", rl.port)
 			fmt.Fprintf(&b, "    <accept>\n      <limit value=\"%s\"/>\n    </accept>\n", rl.limit)
 			b.WriteString("  </rule>\n")
