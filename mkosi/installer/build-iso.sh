@@ -75,6 +75,27 @@ cp "$INITRAMFS" "$ISO_STAGING/boot/initramfs.img"
 # one place the tradeoff (no audit trail, in exchange for a readable
 # console) is clearly correct: ephemeral, wipes its own disk on exit,
 # nothing here needs a lasting audit record.
+#
+# quiet: audit=0 alone did not stop the console noise the user kept
+# seeing -- confirmed a real, separate cause, not a leftover of the
+# same bug: the loop and ext4 kernel drivers print their own routine
+# KERN_INFO messages ("loop1: detected capacity change from 0 to
+# ...", "EXT4-fs (loop1): mounted filesystem ... unmounting
+# filesystem ...") as systemd-repart formats each new partition during
+# `slfhst install` -- entirely unrelated to the audit subsystem, so
+# audit=0 correctly had no effect on them. `quiet` sets the console log
+# threshold to KERN_WARNING (kernel-standard behavior, not
+# systemd/mkosi-specific: Documentation/admin-guide/kernel-
+# parameters.txt), hiding these routine NOTICE/INFO/DEBUG-level driver
+# messages while still surfacing real WARNING/ERR/CRIT/ALERT/EMERG
+# problems on the console if something actually goes wrong -- boot
+# progress visibility (the original reason `quiet` was dropped earlier
+# this session, to debug an invisible-boot issue) is no longer at risk:
+# that issue is resolved and confirmed working across multiple real
+# boots since. `slfhst install`'s own error reporting (e.g. the
+# "slfhst: disks: bootctl install: ..." lines already seen) is plain
+# program stdout/stderr, entirely unaffected by kernel loglevel either
+# way.
 cat > "$ISO_STAGING/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
@@ -82,7 +103,7 @@ serial --unit=0 --speed=115200
 terminal_input console serial
 terminal_output console serial
 menuentry "slfhst installer" {
-  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image console=ttyS0,115200n8 console=tty0 audit=0
+  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image console=ttyS0,115200n8 console=tty0 audit=0 quiet
   initrd /boot/initramfs.img
 }
 EOF
