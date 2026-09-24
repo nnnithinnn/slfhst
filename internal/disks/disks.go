@@ -88,24 +88,70 @@ func sizeOf(d blockDevice) int64 {
 	return n
 }
 
+// bootDiskLabel is this project's own installer ISO's volume label
+// (build-iso.sh's VOLUME_LABEL) -- used to identify and exclude
+// whatever device the installer actually booted from, no matter how
+// it's attached. Confirmed a real, install-destroying bug by direct
+// user report: the installer's own boot media is frequently reported
+// by lsblk as TYPE="disk" (not "rom") when attached as virtual/USB
+// media from an IPMI/BMC-style remote console rather than a true
+// optical drive -- exactly the shape SelectDisks' own candidate filter
+// was looking for. Since boot media is often the smallest device
+// present, it was getting picked as the ROOT disk and would have been
+// partitioned over, destroying the installer's own boot media mid-run.
+const bootDiskLabel = "SLFHST_INSTALL"
+
+// bootDiskName resolves the kernel device name (e.g. "sda", "sr0") of
+// whatever disk carries this project's own known ISO volume label, so
+// SelectDisks can exclude it -- works whether the label lands on a
+// whole disk (a hybrid ISO attached/dd'd as one block device) or a
+// partition (found via that partition's own PKName). Returns an error
+// rather than silently skipping the exclusion if the boot device can't
+// be positively identified -- given the consequences (partitioning
+// over the installer's own boot media), failing loudly here is safer
+// than proceeding without this protection.
+func bootDiskName(all []blockDevice) (string, error) {
+	out, err := runx.RunChecked([]string{"blkid", "-L", bootDiskLabel}, runx.Options{})
+	if err != nil {
+		return "", fmt.Errorf("disks: could not identify the installer's own boot device (blkid -L %s): %w -- refusing to select disks without being able to exclude it", bootDiskLabel, err)
+	}
+	bootName := filepath.Base(strings.TrimSpace(out))
+	for _, d := range all {
+		if d.Name != bootName {
+			continue
+		}
+		if d.Type == "disk" {
+			return d.Name, nil
+		}
+		return d.PKName, nil // a partition -- exclude its whole parent disk.
+	}
+	return "", fmt.Errorf("disks: boot device %s (label %s) not found in lsblk output", bootName, bootDiskLabel)
+}
+
 // SelectDisks picks the root disk (smallest non-rotational disk, else
-// smallest overall) and the bulk disk (largest of what's left). Direct
-// port of installer_disks.py's select_disks().
+// smallest overall) and the bulk disk (largest of what's left) --
+// never the installer's own boot device, see bootDiskName above.
+// Direct port of installer_disks.py's select_disks().
 func SelectDisks() (rootDisk, bulkDisk string, err error) {
 	all, err := listBlockDevices("NAME,PATH,SIZE,TYPE,ROTA,PKNAME")
 	if err != nil {
 		return "", "", err
 	}
-	return selectDisksFrom(all)
+	excludeName, err := bootDiskName(all)
+	if err != nil {
+		return "", "", err
+	}
+	return selectDisksFrom(all, excludeName)
 }
 
 // selectDisksFrom is SelectDisks' pure selection logic, split out so
 // tests can exercise it against fixed lsblk-shaped input instead of a
-// real `lsblk` call.
-func selectDisksFrom(all []blockDevice) (rootDisk, bulkDisk string, err error) {
+// real `lsblk`/`blkid` call. excludeName is the boot device's own
+// lsblk NAME (see bootDiskName) -- never selected as root or bulk.
+func selectDisksFrom(all []blockDevice, excludeName string) (rootDisk, bulkDisk string, err error) {
 	var candidates []blockDevice
 	for _, d := range all {
-		if d.Type == "disk" && sizeOf(d) > 0 {
+		if d.Type == "disk" && sizeOf(d) > 0 && (excludeName == "" || d.Name != excludeName) {
 			candidates = append(candidates, d)
 		}
 	}

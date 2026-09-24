@@ -47,7 +47,7 @@ func TestSelectDisksFromPrefersSmallestNonRotational(t *testing.T) {
 		{Path: "/dev/vdb", Type: "disk", Size: "21474836480", Rota: false},  // 20G, SSD -- root (smaller of the SSDs)
 		{Path: "/dev/vdc", Type: "disk", Size: "107374182400", Rota: false}, // 100G, SSD -- bulk (largest of what's left)
 	}
-	root, bulk, err := selectDisksFrom(all)
+	root, bulk, err := selectDisksFrom(all, "")
 	if err != nil {
 		t.Fatalf("selectDisksFrom: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestSelectDisksFromFallsBackToSmallestOverall(t *testing.T) {
 		{Path: "/dev/vda", Type: "disk", Size: "10737418240", Rota: true},
 		{Path: "/dev/vdb", Type: "disk", Size: "107374182400", Rota: true},
 	}
-	root, bulk, err := selectDisksFrom(all)
+	root, bulk, err := selectDisksFrom(all, "")
 	if err != nil {
 		t.Fatalf("selectDisksFrom: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestSelectDisksFromIgnoresNonDiskEntries(t *testing.T) {
 		{Path: "/dev/vda1", Type: "part", Size: "1073741824", Rota: false}, // a partition, not a disk
 		{Path: "/dev/vdb", Type: "disk", Size: "21474836480", Rota: false},
 	}
-	root, bulk, err := selectDisksFrom(all)
+	root, bulk, err := selectDisksFrom(all, "")
 	if err != nil {
 		t.Fatalf("selectDisksFrom: %v", err)
 	}
@@ -92,8 +92,48 @@ func TestSelectDisksFromIgnoresNonDiskEntries(t *testing.T) {
 
 func TestSelectDisksFromRequiresTwoDisks(t *testing.T) {
 	all := []blockDevice{{Path: "/dev/vda", Type: "disk", Size: "10737418240", Rota: false}}
-	if _, _, err := selectDisksFrom(all); err == nil {
+	if _, _, err := selectDisksFrom(all, ""); err == nil {
 		t.Fatal("expected an error with only one disk")
+	}
+}
+
+// TestSelectDisksFromExcludesBootDevice is a regression test for a real,
+// install-destroying bug found by direct user report on real hardware:
+// the installer's own boot media (a virtual/USB CD attached by an
+// IPMI/BMC-style remote console) is commonly reported by lsblk as
+// TYPE="disk", not "rom" -- exactly the shape the candidate filter looks
+// for. Since boot media is often the smallest device present, it was
+// getting picked as the ROOT disk and would have been partitioned over.
+func TestSelectDisksFromExcludesBootDevice(t *testing.T) {
+	all := []blockDevice{
+		{Name: "sr0", Path: "/dev/sr0", Type: "disk", Size: "734003200", Rota: false},    // boot ISO, ~700M, smallest -- must be excluded
+		{Name: "vda", Path: "/dev/vda", Type: "disk", Size: "21474836480", Rota: false},  // 20G, SSD -- real root
+		{Name: "vdb", Path: "/dev/vdb", Type: "disk", Size: "107374182400", Rota: false}, // 100G, SSD -- real bulk
+	}
+	root, bulk, err := selectDisksFrom(all, "sr0")
+	if err != nil {
+		t.Fatalf("selectDisksFrom: %v", err)
+	}
+	if root != "/dev/vda" {
+		t.Errorf("root = %q, want /dev/vda (boot device sr0 must be excluded despite being smallest)", root)
+	}
+	if bulk != "/dev/vdb" {
+		t.Errorf("bulk = %q, want /dev/vdb", bulk)
+	}
+}
+
+// TestSelectDisksFromExcludesBootDeviceWhenOnlyTwoDisksRemain confirms
+// exclusion still leaves an error (not a silent 2-disk selection that
+// includes the boot device) when only the boot device plus one real disk
+// are present -- excluding the boot device must reduce the candidate
+// pool the same way a too-small disk count does.
+func TestSelectDisksFromExcludesBootDeviceWhenOnlyTwoDisksRemain(t *testing.T) {
+	all := []blockDevice{
+		{Name: "sr0", Path: "/dev/sr0", Type: "disk", Size: "734003200", Rota: false},
+		{Name: "vda", Path: "/dev/vda", Type: "disk", Size: "21474836480", Rota: false},
+	}
+	if _, _, err := selectDisksFrom(all, "sr0"); err == nil {
+		t.Fatal("expected an error: only one real disk remains once the boot device is excluded")
 	}
 }
 
