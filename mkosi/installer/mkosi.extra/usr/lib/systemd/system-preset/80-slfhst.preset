@@ -2,7 +2,7 @@
 # this point) is gone -- superseded by root-autologin-on-every-console
 # instead (see usr/lib/systemd/system/getty@.service.d/autologin.conf,
 # serial-getty@.service.d/autologin.conf, and root's login shell,
-# usr/bin/slfhst-console-wrapper, set via mkosi.postinst.chroot). That
+# usr/bin/slfhst-console-wrapper, set via mkosi.conf's RootShell=). That
 # unit hardcoded exactly one console (tty1, then briefly ttyS0) to run
 # the installer on; confirmed twice this session, on real hardware,
 # that whichever one wasn't hardcoded left the whole interactive flow

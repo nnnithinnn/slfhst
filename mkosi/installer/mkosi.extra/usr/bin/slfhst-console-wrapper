@@ -1,9 +1,14 @@
 #!/bin/bash
 # Root's login shell in the live installer environment (set via
-# mkosi.postinst.chroot's `usermod -s`). Every console auto-logs in as
-# root (see the getty@.service/serial-getty@.service autologin
-# drop-ins) since it's genuinely ambiguous ahead of time which single
-# console the admin is actually watching -- kernel/tty1/VNC, or serial.
+# mkosi.conf's RootShell=, applied through mkosi's own build-time
+# `systemd-firstboot --root-shell=` invocation -- NOT a postinst
+# `usermod` call, which turned out not to survive to the final image
+# since mkosi.postinst.chroot scripts run before mkosi's own automatic
+# systemd-firstboot step, and were silently overridden). Every console
+# auto-logs in as root (see the getty@.service/serial-getty@.service
+# autologin drop-ins) since it's genuinely ambiguous ahead of time
+# which single console the admin is actually watching -- kernel/tty1/
+# VNC, or serial.
 # So instead of guessing, every console reaches this same decision
 # point: whichever one gets here first starts the installer (a flock on
 # a shared lockfile makes this race-safe across concurrent logins on
