@@ -54,6 +54,27 @@ mksquashfs "$ROOT" "$ISO_STAGING/LiveOS/squashfs.img" -comp gzip \
 cp "$ROOT/usr/lib/modules/$KVER/vmlinuz" "$ISO_STAGING/boot/vmlinuz"
 cp "$INITRAMFS" "$ISO_STAGING/boot/initramfs.img"
 
+# audit=0: per the user's direct complaint about real-hardware console
+# output -- with no userspace auditd running (deliberately dropped, see
+# the plan's "systemd-only tooling" section) and systemd itself emitting
+# audit records for PAM session/unit-management events regardless, the
+# kernel's audit subsystem kept flooding the live tty with
+# "audit: type=NNNN audit(...): ..." lines that interleaved with and
+# obscured `slfhst install`'s own interactive prompts. Confirmed via
+# DeepWiki against systemd's own source that this is independent of
+# systemd-journald's own audit-socket registration (journald's Audit=
+# controls whether it asks the kernel to *generate* records, not
+# whether the kernel *also* prints them to console) and independent of
+# loglevel=/console_loglevel tuning -- audit=0 is the actual kernel
+# parameter that stops record generation outright. Installer-only, not
+# applied to the deployed appliance's own UKI cmdline: the appliance
+# still wants SELinux AVC denials flowing through the kernel audit
+# socket into journald (per the plan's SELinux hardening section), and
+# admin access there is over SSH, not a local console anyone is staring
+# at during interactive prompts -- this installer environment is the
+# one place the tradeoff (no audit trail, in exchange for a readable
+# console) is clearly correct: ephemeral, wipes its own disk on exit,
+# nothing here needs a lasting audit record.
 cat > "$ISO_STAGING/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
@@ -61,7 +82,7 @@ serial --unit=0 --speed=115200
 terminal_input console serial
 terminal_output console serial
 menuentry "slfhst installer" {
-  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image console=ttyS0,115200n8 console=tty0
+  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image console=ttyS0,115200n8 console=tty0 audit=0
   initrd /boot/initramfs.img
 }
 EOF
