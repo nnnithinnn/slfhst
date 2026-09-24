@@ -1,16 +1,20 @@
 [Unit]
 Description=slfhst interactive installer
-# Real VPS/cloud providers overwhelmingly expose only a serial console
-# (confirmed directly by the project's own author: reachable via
-# console=ttyS0 but not the local tty1 VGA console at all). Confirmed
-# the hard way this session: with this bound to /dev/tty1, the whole
-# interactive install flow ran invisibly to anyone watching only
-# serial -- kernel/systemd's own generic boot messages get mirrored to
-# every configured console=, but a program's own StandardOutput=tty
-# session bound to one specific TTYPath is not, so bind to the serial
-# console instead, matching this project's actual real-world usage.
-After=local-fs.target serial-getty@ttyS0.service systemd-user-sessions.service
-Conflicts=serial-getty@ttyS0.service
+# Which single console to bind to is genuinely ambiguous ahead of time
+# -- this project's own real-world deployment target is a serial-only
+# VPS console, but confirmed directly this session that a VNC/KVM-style
+# graphical console (showing the local tty1, not serial) is also a real
+# usage pattern. Binding to /dev/ttyS0 left the wizard invisible on a
+# VNC session the exact same way binding to /dev/tty1 left it invisible
+# on serial -- picked tty1 here as the pragmatic default (the "first"
+# console, what a VNC/KVM console shows by default) since kernel/
+# systemd's own generic boot messages already mirror to every
+# configured console= regardless, so a serial-only user still sees real
+# boot progress; only this service's own interactive session needs a
+# single concrete TTYPath. Revisit if serial-only users need this too
+# (e.g. a per-console template unit) -- not done here, kept minimal.
+After=local-fs.target getty@tty1.service systemd-user-sessions.service
+Conflicts=getty@tty1.service
 
 [Service]
 Type=oneshot
@@ -18,9 +22,10 @@ ExecStart=/usr/bin/slfhst install
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
-TTYPath=/dev/ttyS0
+TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
+TTYVTDisallocate=yes
 
 [Install]
 WantedBy=multi-user.target
