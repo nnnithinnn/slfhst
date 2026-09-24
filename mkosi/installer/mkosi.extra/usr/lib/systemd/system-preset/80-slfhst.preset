@@ -6,3 +6,13 @@
 # learned for the appliance build's own units -- consistent mechanism,
 # not a special case.
 enable slfhst-install.service
+
+# Real finding from actually boot-testing the ISO under QEMU: base
+# systemd's own systemd-firstboot.service runs its interactive
+# "Initial Setup" wizard (timezone/root password prompts) on tty1
+# before slfhst-install.service gets a chance to -- this project's own
+# installer already handles all of that through its own flow, so
+# Fedora's generic one is pure noise here, not a fallback worth keeping.
+# Lower-numbered preset files win ties, so this line (in 80-*) overrides
+# whatever base systemd's own 90-systemd.preset says for this unit.
+disable systemd-firstboot.service
