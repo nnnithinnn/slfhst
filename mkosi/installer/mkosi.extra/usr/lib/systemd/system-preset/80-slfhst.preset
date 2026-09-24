@@ -1,15 +1,18 @@
-# Real finding, confirmed this session: mkosi runs `systemctl preset-all`
-# itself as one of its own final build steps -- a plain `systemctl
-# enable` in a postinst script gets silently undone by that (confirmed:
-# "Removed '/buildroot/etc/.../slfhst-install.service'" in a real build
-# log). A preset file is what actually survives, same lesson already
-# learned for the appliance build's own units -- consistent mechanism,
-# not a special case.
-enable slfhst-install.service
+# slfhst-install.service (and its `enable` preset line, kept here up to
+# this point) is gone -- superseded by root-autologin-on-every-console
+# instead (see usr/lib/systemd/system/getty@.service.d/autologin.conf,
+# serial-getty@.service.d/autologin.conf, and root's login shell,
+# usr/bin/slfhst-console-wrapper, set via mkosi.postinst.chroot). That
+# unit hardcoded exactly one console (tty1, then briefly ttyS0) to run
+# the installer on; confirmed twice this session, on real hardware,
+# that whichever one wasn't hardcoded left the whole interactive flow
+# running invisibly. Autologin + a login-shell wrapper reaches the same
+# decision on every console instead of guessing which one the admin is
+# actually watching.
 
 # Base systemd's own systemd-firstboot.service runs its interactive
 # "Initial Setup" wizard (timezone/root password prompts) on tty1 before
-# slfhst-install.service gets a chance to -- this project's own installer
+# the console wrapper gets a chance to -- this project's own installer
 # already handles all of that through its own flow, so Fedora's generic
 # one is pure noise here, not a fallback worth keeping.
 #
