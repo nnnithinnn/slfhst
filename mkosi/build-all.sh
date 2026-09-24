@@ -27,7 +27,13 @@ for f in mkosi/appliance/mkosi.extra/usr/bin/slfhst mkosi/installer/mkosi.extra/
     fi
 done
 
-echo "=== 1/4: appliance build (version $VERSION) ==="
+echo "=== 1/5: fetching Cloudflare IP ranges (build provenance, not user data -- see internal/firewall) ==="
+CF_IP_DIR="mkosi/appliance/mkosi.extra/usr/share/slfhst/cloudflare-ips"
+mkdir -p "$CF_IP_DIR"
+curl -fsSL https://www.cloudflare.com/ips-v4 -o "$CF_IP_DIR/v4.txt"
+curl -fsSL https://www.cloudflare.com/ips-v6 -o "$CF_IP_DIR/v6.txt"
+
+echo "=== 2/5: appliance build (version $VERSION) ==="
 ( cd mkosi/appliance && mkosi --image-version="$VERSION" -f build )
 
 USR_RAW="$(compgen -G "mkosi/appliance/slfhst_${VERSION}.usr-*.raw" | head -n1)"
@@ -37,16 +43,16 @@ if [ -z "$USR_RAW" ] || [ ! -e "$UKI_EFI" ]; then
     exit 1
 fi
 
-echo "=== 2/4: embedding appliance artifacts into the installer ==="
+echo "=== 3/5: embedding appliance artifacts into the installer ==="
 mkdir -p mkosi/installer/mkosi.extra/usr/share/slfhst/appliance
 cp "$USR_RAW" mkosi/installer/mkosi.extra/usr/share/slfhst/appliance/usr.raw
 cp "$UKI_EFI" mkosi/installer/mkosi.extra/usr/share/slfhst/appliance/uki.efi
 printf '%s' "$VERSION" > mkosi/installer/mkosi.extra/usr/share/slfhst/appliance/VERSION
 
-echo "=== 3/4: installer build ==="
+echo "=== 4/5: installer build ==="
 ( cd mkosi/installer && mkosi -f build )
 
-echo "=== 4/4: ISO assembly ==="
+echo "=== 5/5: ISO assembly ==="
 mkdir -p "$OUTDIR"
 mkosi/installer/build-iso.sh mkosi/installer/slfhst-installer "$OUTDIR/slfhst-installer.iso"
 

@@ -52,13 +52,13 @@ const (
 // root/etc/firewalld/ -- the pre-boot equivalent of firewall.py's
 // setup(), run once by the installer before reboot.
 func SetupPreBoot(root string) error {
-	v4ranges, err := fetchCIDRList(cfIPv4URL)
+	v4ranges, err := readCIDRList(filepath.Join(root, cfIPListDir, "v4.txt"))
 	if err != nil {
-		return fmt.Errorf("firewall: fetch %s: %w", cfIPv4URL, err)
+		return fmt.Errorf("firewall: read v4.txt: %w", err)
 	}
-	v6ranges, err := fetchCIDRList(cfIPv6URL)
+	v6ranges, err := readCIDRList(filepath.Join(root, cfIPListDir, "v6.txt"))
 	if err != nil {
-		return fmt.Errorf("firewall: fetch %s: %w", cfIPv6URL, err)
+		return fmt.Errorf("firewall: read v6.txt: %w", err)
 	}
 
 	if err := writeIPSetXML(root, cfIPSetV4, "inet", v4ranges); err != nil {

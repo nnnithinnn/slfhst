@@ -10,6 +10,7 @@ output/
 # not a place to check in build output.
 /mkosi/appliance/mkosi.extra/usr/bin/slfhst
 /mkosi/installer/mkosi.extra/usr/bin/slfhst
+/mkosi/appliance/mkosi.extra/usr/share/slfhst/cloudflare-ips/
 *.raw
 *.efi
 *.iso

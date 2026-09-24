@@ -1,28 +1,12 @@
-// Package firewall covers two different call sites, per the plan's
-// "firewalld: two different problems, two different solutions":
-//
-//   - On the deployed appliance (this file): a live firewalld daemon is
-//     running, reached over D-Bus (org.fedoraproject.FirewallD1) via
-//     internal/dbus -- this turned out to be firewalld's *primary* API
-//     (firewall-cmd itself is just a D-Bus client), confirmed by
-//     introspecting the real running daemon, not assumed.
-//   - Pre-boot, from the installer against the chrooted/mounted target:
-//     no daemon exists to talk to, so that path (not yet written -- plan
-//     Phase 3) authors firewalld's on-disk XML directly instead -- also
-//     confirmed working (see the plan's Phase 0 notes: hand-authored XML
-//     loaded correctly by a real firewalld with no live daemon at write
-//     time).
-//
-// internal/dbus's mechanics (including this exact ipset add/setEntries/
-// getEntries round trip) were verified against a real firewalld in a
-// container -- see the plan. Plan Phase 2 (this file).
+// Package firewall covers the live appliance (this file, over D-Bus)
+// and the pre-boot installer target (preboot.go, on-disk XML).
 package firewall
 
 import (
 	"bufio"
 	"fmt"
-	"io"
-	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nnnithinnn/slfhst/internal/dbus"
@@ -36,18 +20,19 @@ const (
 	configIface = "org.fedoraproject.FirewallD1.config"
 	ipsetIface  = "org.fedoraproject.FirewallD1.config.ipset"
 
-	cfIPv4URL = "https://www.cloudflare.com/ips-v4"
-	cfIPv6URL = "https://www.cloudflare.com/ips-v6"
+	// cfIPListDir holds CI-fetched Cloudflare IP ranges baked into /usr
+	// at build time (see mkosi/build-all.sh), not fetched live.
+	cfIPListDir = "usr/share/slfhst/cloudflare-ips"
 
 	cfIPSetV4 = "cloudflare-v4"
 	cfIPSetV6 = "cloudflare-v6"
 )
 
 var cfIPSets = []struct {
-	name, url, family string
+	name, file, family string
 }{
-	{cfIPSetV4, cfIPv4URL, "inet"},
-	{cfIPSetV6, cfIPv6URL, "inet6"},
+	{cfIPSetV4, "v4.txt", "inet"},
+	{cfIPSetV6, "v6.txt", "inet6"},
 }
 
 // SyncCloudflareIPSets refreshes the firewalld ipsets backing the
@@ -65,9 +50,9 @@ func SyncCloudflareIPSets() error {
 	defer c.Close()
 
 	for _, spec := range cfIPSets {
-		ranges, err := fetchCIDRList(spec.url)
+		ranges, err := readCIDRList(filepath.Join("/", cfIPListDir, spec.file))
 		if err != nil {
-			return fmt.Errorf("firewall: fetch %s: %w", spec.url, err)
+			return fmt.Errorf("firewall: read %s: %w", spec.file, err)
 		}
 
 		path, err := ensureIPSet(c, spec.name, spec.family)
@@ -107,21 +92,17 @@ func ensureIPSet(c *dbus.Conn, name, family string) (string, error) {
 	return path, nil
 }
 
-// fetchCIDRList fetches a newline-separated list of CIDR ranges from
-// Cloudflare's published IP-range endpoints.
-func fetchCIDRList(url string) ([]string, error) {
-	resp, err := http.Get(url)
+// readCIDRList reads a newline-separated list of CIDR ranges from a
+// bundled file (see cfIPListDir).
+func readCIDRList(path string) ([]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
+	defer f.Close()
 
 	var out []string
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
