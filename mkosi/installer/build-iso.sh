@@ -57,8 +57,11 @@ cp "$INITRAMFS" "$ISO_STAGING/boot/initramfs.img"
 cat > "$ISO_STAGING/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
+serial --unit=0 --speed=115200
+terminal_input console serial
+terminal_output console serial
 menuentry "slfhst installer" {
-  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image quiet
+  linux /boot/vmlinuz root=live:CDLABEL=$VOLUME_LABEL rd.live.image console=ttyS0,115200n8 console=tty0
   initrd /boot/initramfs.img
 }
 EOF
