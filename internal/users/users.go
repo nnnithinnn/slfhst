@@ -103,10 +103,12 @@ func Create(root string, cfg map[string]any) error {
 
 // SetRootPassword sets root's password to the admin account's, so
 // emergency-mode/sulogin console recovery is usable if the appliance
-// ever fails to boot normally. systemd-firstboot --root-password-file=
-// silently no-ops whenever a root shadow entry already exists, which it
-// always does (from the base OS packages) -- chpasswd --root updates an
-// existing entry correctly, confirmed by testing both.
+// ever fails to boot normally. Requires writeSysusersConf's own "u root"
+// line to have already run -- confirmed by testing that root has no
+// passwd/shadow entry at all on a fresh DPS root partition (no base
+// package ships one; root isn't sysusers-managed by default), so
+// chpasswd --root fails with "user 'root' does not exist" unless
+// something creates the account first.
 func SetRootPassword(root, password string) error {
 	_, err := runx.Run([]string{"chpasswd", "--root", root},
 		runx.Options{Input: strings.NewReader("root:" + password + "\n"), Capture: true})
@@ -129,7 +131,7 @@ func SetRootPassword(root, password string) error {
 // this needs no other change to still be picked up.
 func writeSysusersConf(root, adminUser string) error {
 	content := fmt.Sprintf(
-		"u %s - \"slfhst service user\" %s /usr/sbin/nologin\nu %s - \"slfhst admin\" /home/%s /bin/bash\nm %s wheel\n",
+		"u %s - \"slfhst service user\" %s /usr/sbin/nologin\nu %s - \"slfhst admin\" /home/%s /bin/bash\nu root 0 \"Super User\" /root /bin/bash\nm %s wheel\n",
 		config.ServiceUser, config.ServiceHomeDir, adminUser, adminUser, adminUser,
 	)
 	path := filepath.Join(root, "etc/sysusers.d/slfhst.conf")

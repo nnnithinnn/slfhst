@@ -77,6 +77,7 @@ func TestWriteSysusersConf(t *testing.T) {
 	for _, want := range []string{
 		"u svc - \"slfhst service user\" /home/svc /usr/sbin/nologin",
 		"u admin - \"slfhst admin\" /home/admin /bin/bash",
+		"u root 0 \"Super User\" /root /bin/bash",
 		"m admin wheel",
 	} {
 		if !strings.Contains(text, want) {
