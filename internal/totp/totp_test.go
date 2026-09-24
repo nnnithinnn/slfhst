@@ -21,6 +21,18 @@ func TestWriteSSHDConfig(t *testing.T) {
 			t.Errorf("sshd_config.d drop-in missing %q", want)
 		}
 	}
+
+	// Regression test: the main /etc/ssh/sshd_config must exist too, or
+	// sshd has nothing to read at all -- confirmed a real gap by
+	// actually running the installer end to end (no factory-default
+	// ships one either, in this project's split root/usr design).
+	main, err := os.ReadFile(filepath.Join(root, "etc/ssh/sshd_config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(main), "Include /etc/ssh/sshd_config.d/*.conf") {
+		t.Errorf("main sshd_config missing the Include line:\n%s", main)
+	}
 }
 
 // TestPAMStackJumpCountMatchesInsertedRules is the one thing worth

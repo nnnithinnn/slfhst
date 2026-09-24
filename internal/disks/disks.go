@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/nnnithinnn/slfhst/internal/runx"
@@ -35,13 +34,27 @@ const (
 	rootSize    = "1G"
 )
 
+// lsblkBool accepts lsblk -J's ROTA field in either shape this project
+// has actually seen across util-linux versions: an older release quotes
+// it as a "0"/"1" string, but Fedora 44's util-linux 2.41.5 (confirmed
+// directly -- the same version the real appliance/installer ship)
+// emits a raw JSON boolean instead. Same root cause and same fix
+// pattern as blockDevice.Size below.
+type lsblkBool bool
+
+func (b *lsblkBool) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), `"`)
+	*b = s == "1" || s == "true"
+	return nil
+}
+
 type blockDevice struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Size   string `json:"size"`
-	Type   string `json:"type"`
-	Rota   string `json:"rota"`
-	PKName string `json:"pkname"`
+	Name   string      `json:"name"`
+	Path   string      `json:"path"`
+	Size   json.Number `json:"size"`
+	Type   string      `json:"type"`
+	Rota   lsblkBool   `json:"rota"`
+	PKName string      `json:"pkname"`
 }
 
 type lsblkOutput struct {
@@ -49,7 +62,7 @@ type lsblkOutput struct {
 }
 
 func listBlockDevices(columns string) ([]blockDevice, error) {
-	out, err := runx.RunChecked([]string{"lsblk", "-J", "-b", "-o", columns}, runx.Options{})
+	out, err := runx.RunChecked([]string{"lsblk", "--list", "-J", "-b", "-o", columns}, runx.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("disks: lsblk: %w", err)
 	}
@@ -60,8 +73,18 @@ func listBlockDevices(columns string) ([]blockDevice, error) {
 	return parsed.BlockDevices, nil
 }
 
+// sizeOf parses a blockDevice's SIZE field -- json.Number rather than a
+// strconv call on a plain string field, for the same real reason as
+// lsblkBool above: confirmed via an actual Fedora 44 container that
+// `lsblk -J -b`'s SIZE field is a raw JSON number on this util-linux
+// version, not the quoted string this code originally assumed
+// unconditionally. json.Number accepts both shapes on unmarshal, so this
+// is the fix, not a workaround -- a real, previously-unknown bug that
+// would have broken `slfhst install`'s very first step (SelectDisks) on
+// the real target, caught only by actually running it end to end
+// against a real lsblk, not by unit tests against fixture data.
 func sizeOf(d blockDevice) int64 {
-	n, _ := strconv.ParseInt(d.Size, 10, 64)
+	n, _ := d.Size.Int64()
 	return n
 }
 
@@ -92,7 +115,7 @@ func selectDisksFrom(all []blockDevice) (rootDisk, bulkDisk string, err error) {
 
 	var nonRotational []blockDevice
 	for _, d := range candidates {
-		if d.Rota == "0" {
+		if !bool(d.Rota) {
 			nonRotational = append(nonRotational, d)
 		}
 	}
@@ -176,7 +199,7 @@ func PartitionRoot(disk string) error {
 // (rather than adding a rarely-used PartLabel field to blockDevice)
 // since this is the only place that needs it.
 func findPartitionByLabel(disk, label string) (string, error) {
-	out, err := runx.RunChecked([]string{"lsblk", "-J", "-b", "-o", "NAME,PATH,PKNAME,PARTLABEL"}, runx.Options{})
+	out, err := runx.RunChecked([]string{"lsblk", "--list", "-J", "-b", "-o", "NAME,PATH,PKNAME,PARTLABEL"}, runx.Options{})
 	if err != nil {
 		return "", fmt.Errorf("disks: lsblk: %w", err)
 	}
@@ -223,6 +246,47 @@ func MountRootAndVar(disk, mountpoint string) error {
 	}
 	if _, err := runx.Run([]string{"mount", varPart, varMount}, runx.Options{}); err != nil {
 		return fmt.Errorf("disks: mount %s: %w", varPart, err)
+	}
+	return nil
+}
+
+// EnsureFHSSymlinks creates the standard usr-merge compatibility
+// symlinks (bin, sbin, lib, lib64 -> usr/...) at the root of the target
+// tree -- found to be genuinely necessary, not just tidy, by actually
+// running the installer end to end: the persistent root partition is
+// freshly formatted ext4 with nothing on it but what this project's own
+// code writes, and nowhere in this DPS design does anything else create
+// these symlinks (a traditional single-partition install gets them for
+// free from a base "filesystem" package; this project's split
+// root/usr layout has no equivalent). Without them, any ELF binary
+// whose dynamic linker is referenced via an absolute /lib(64)/... path
+// (effectively all of them) fails to execute inside a chroot of the
+// target -- confirmed directly: `chroot <target> sshd -t` failed with
+// "No such file or directory" for a real, present sshd binary, because
+// /lib/ld-linux-*.so.* couldn't be found with no /lib symlink at the
+// new root. This would fail identically on the real deployed
+// appliance's first actual boot, not just here -- nothing else in the
+// chain would have caught it before a real boot attempt. Call after
+// `usr` is mounted (MountUsr), so the usr/<name> existence check below
+// reflects the real content, not an empty mountpoint.
+func EnsureFHSSymlinks(mountpoint string) error {
+	links := map[string]string{
+		"bin":   "usr/bin",
+		"sbin":  "usr/sbin",
+		"lib":   "usr/lib",
+		"lib64": "usr/lib64",
+	}
+	for name, target := range links {
+		if _, err := os.Lstat(filepath.Join(mountpoint, target)); err != nil {
+			continue // this arch/build doesn't have a usr/<name> to link to (e.g. no lib64 on some architectures).
+		}
+		path := filepath.Join(mountpoint, name)
+		if _, err := os.Lstat(path); err == nil {
+			continue // already exists -- idempotent, matches other installer steps.
+		}
+		if err := os.Symlink(target, path); err != nil {
+			return fmt.Errorf("disks: symlink %s -> %s: %w", path, target, err)
+		}
 	}
 	return nil
 }

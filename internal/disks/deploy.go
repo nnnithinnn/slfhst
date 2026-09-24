@@ -34,7 +34,7 @@ const (
 
 // findPartitionByNumber returns the /dev path of disk's Nth partition.
 func findPartitionByNumber(disk string, n int) (string, error) {
-	out, err := runx.RunChecked([]string{"lsblk", "-J", "-b", "-o", "NAME,PATH,PKNAME,PARTN"}, runx.Options{})
+	out, err := runx.RunChecked([]string{"lsblk", "--list", "-J", "-b", "-o", "NAME,PATH,PKNAME,PARTN"}, runx.Options{})
 	if err != nil {
 		return "", fmt.Errorf("disks: lsblk: %w", err)
 	}

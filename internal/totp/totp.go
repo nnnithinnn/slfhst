@@ -133,6 +133,18 @@ func EnrollTOTP(root, adminUser string) error {
 	return nil
 }
 
+// mainSSHDConfig is the standard Fedora/RHEL default -- a bare Include
+// line, with everything else left to drop-ins. Confirmed a real,
+// previously-unknown gap by actually running the installer end to end:
+// nothing else in this project's split root/usr design ever creates
+// this file (openssh-server ships no /usr/share/factory/etc/ssh/
+// fallback either, confirmed by checking the real built content, so
+// there's no factory-default to fall back on), and without it sshd has
+// no config file to read at all -- `sshd -t` failed with "/etc/ssh/
+// sshd_config: No such file or directory" against an otherwise
+// correctly-generated drop-in.
+const mainSSHDConfig = "Include /etc/ssh/sshd_config.d/*.conf\n"
+
 func writeSSHDConfig(root string) error {
 	dir := filepath.Join(root, "etc/ssh/sshd_config.d")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -141,6 +153,14 @@ func writeSSHDConfig(root string) error {
 	path := filepath.Join(dir, "10-slfhst-totp.conf")
 	if err := os.WriteFile(path, []byte(sshdTOTPConf), 0o644); err != nil {
 		return fmt.Errorf("totp: write %s: %w", path, err)
+	}
+
+	mainPath := filepath.Join(root, "etc/ssh/sshd_config")
+	if _, err := os.Stat(mainPath); err == nil {
+		return nil // already present -- idempotent, don't clobber an existing one.
+	}
+	if err := os.WriteFile(mainPath, []byte(mainSSHDConfig), 0o644); err != nil {
+		return fmt.Errorf("totp: write %s: %w", mainPath, err)
 	}
 	return nil
 }
@@ -159,7 +179,26 @@ func writePAMStack(root string) error {
 // ValidateSSHDConfig runs `chroot <root> sshd -t` -- the one place stage1
 // genuinely needs a real chroot (see the package doc comment for why
 // `sshd -T -f` alone isn't enough).
+//
+// Bind-mounts the installer's own live /dev onto <root>/dev first, and
+// unmounts it afterward -- found to be genuinely necessary, not
+// optional, by actually running this against a real freshly-partitioned
+// target: /dev is normally populated by the kernel's devtmpfs at real
+// boot time, which never happens for a pre-boot chroot, so sshd failed
+// with "Couldn't open /dev/null: No such file or directory" against an
+// otherwise entirely correct config. Same standard pattern real
+// installers (debootstrap, arch-chroot) already use for exactly this
+// reason.
 func ValidateSSHDConfig(root string) error {
+	devPath := filepath.Join(root, "dev")
+	if err := os.MkdirAll(devPath, 0o755); err != nil {
+		return fmt.Errorf("totp: mkdir %s: %w", devPath, err)
+	}
+	if _, err := runx.Run([]string{"mount", "--bind", "/dev", devPath}, runx.Options{}); err != nil {
+		return fmt.Errorf("totp: bind-mount /dev onto %s: %w", devPath, err)
+	}
+	defer runx.Run([]string{"umount", devPath}, runx.Options{})
+
 	if _, err := runx.Run([]string{"sshd", "-t"}, runx.Options{Root: root, Capture: true}); err != nil {
 		return fmt.Errorf("totp: sshd -t failed against %s: %w", root, err)
 	}

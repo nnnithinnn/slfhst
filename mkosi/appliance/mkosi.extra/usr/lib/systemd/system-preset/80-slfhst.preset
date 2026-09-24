@@ -17,3 +17,18 @@ enable firewalld.service
 enable podman-auto-update.timer
 enable slfhst-monitor.timer
 enable slfhst-update.timer
+
+# srv-data.mount is generated at install time (internal/disks.MountBulk
+# writes it directly to /etc/systemd/system/, with a symlink under
+# local-fs.target.wants/), not baked into this image -- but that
+# manually-created symlink turned out not to survive the install:
+# ApplyPresets (systemctl preset-all --root=<target>) runs as the very
+# last step of installer.Run(), and any unit with no matching preset
+# rule gets disabled by Fedora's own catch-all
+# 99-default-disable.preset, silently deleting the symlink MountBulk
+# just created earlier in the same run. Confirmed for real by running
+# the installer end to end: /srv/data would never have auto-mounted on
+# a real deployed appliance's reboot. A static preset rule here (unit
+# name is fixed, always "srv-data.mount", same on every install) makes
+# preset-all re-affirm it instead.
+enable srv-data.mount

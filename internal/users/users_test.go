@@ -69,7 +69,7 @@ func TestWriteSysusersConf(t *testing.T) {
 	if err := writeSysusersConf(root, "admin"); err != nil {
 		t.Fatalf("writeSysusersConf: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "usr/lib/sysusers.d/slfhst.conf"))
+	data, err := os.ReadFile(filepath.Join(root, "etc/sysusers.d/slfhst.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}

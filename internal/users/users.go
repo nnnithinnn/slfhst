@@ -98,12 +98,23 @@ func Create(root string, cfg map[string]any) error {
 	return chownDataDirs(root, svcUID, svcGID)
 }
 
+// writeSysusersConf writes the per-install admin/svc user definitions
+// under /etc/sysusers.d/, NOT /usr/lib/sysusers.d/ -- confirmed a real,
+// install-blocking bug by actually running the installer end to end
+// against a real mounted target: /usr is the read-only, swappable erofs
+// usr partition (mounted read-only on purpose, see disks.MountUsr), so
+// writing there fails outright with "read-only file system". /etc lives
+// on the persistent, writable root partition, which is exactly where a
+// per-deployment, host-specific file like this belongs anyway --
+// systemd-sysusers itself reads both /usr/lib/sysusers.d/ (static,
+// package-provided) and /etc/sysusers.d/ (local override) by design, so
+// this needs no other change to still be picked up.
 func writeSysusersConf(root, adminUser string) error {
 	content := fmt.Sprintf(
 		"u %s - \"slfhst service user\" %s /usr/sbin/nologin\nu %s - \"slfhst admin\" /home/%s /bin/bash\nm %s wheel\n",
 		config.ServiceUser, config.ServiceHomeDir, adminUser, adminUser, adminUser,
 	)
-	path := filepath.Join(root, "usr/lib/sysusers.d/slfhst.conf")
+	path := filepath.Join(root, "etc/sysusers.d/slfhst.conf")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("users: mkdir: %w", err)
 	}

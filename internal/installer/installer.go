@@ -68,6 +68,9 @@ func Run() error {
 	if err := disks.MountUsr(rootDisk, mountpoint); err != nil {
 		return err
 	}
+	if err := disks.EnsureFHSSymlinks(mountpoint); err != nil {
+		return err
+	}
 	espPath, err := disks.MountESP(rootDisk, mountpoint)
 	if err != nil {
 		return err
