@@ -95,7 +95,25 @@ func Create(root string, cfg map[string]any) error {
 	if err := enableLinger(root); err != nil {
 		return err
 	}
+	if err := SetRootPassword(root, password); err != nil {
+		return err
+	}
 	return chownDataDirs(root, svcUID, svcGID)
+}
+
+// SetRootPassword sets root's password to the admin account's, so
+// emergency-mode/sulogin console recovery is usable if the appliance
+// ever fails to boot normally. systemd-firstboot --root-password-file=
+// silently no-ops whenever a root shadow entry already exists, which it
+// always does (from the base OS packages) -- chpasswd --root updates an
+// existing entry correctly, confirmed by testing both.
+func SetRootPassword(root, password string) error {
+	_, err := runx.Run([]string{"chpasswd", "--root", root},
+		runx.Options{Input: strings.NewReader("root:" + password + "\n"), Capture: true})
+	if err != nil {
+		return fmt.Errorf("users: chpasswd --root: %w", err)
+	}
+	return nil
 }
 
 // writeSysusersConf writes the per-install admin/svc user definitions
