@@ -27,6 +27,8 @@ const applianceDir = "/usr/share/slfhst/appliance"
 func Run() error {
 	prompt.Banner("slfhst installer")
 
+	disks.CleanupMounts(mountpoint)
+
 	version, err := readApplianceVersion()
 	if err != nil {
 		return err

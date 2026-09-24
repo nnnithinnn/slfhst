@@ -268,6 +268,21 @@ func PartitionRoot(disk string) error {
 	if err != nil {
 		return fmt.Errorf("disks: systemd-repart %s: %w", disk, err)
 	}
+
+	// New partition device nodes (/dev/sdaN etc.) are created
+	// asynchronously by udev in response to the kernel's partition-table
+	// update -- systemd-repart triggers that update before exiting, but
+	// doesn't wait for udev to finish creating the nodes. Same race
+	// PartitionBulk already guards against after its own parted call;
+	// confirmed as a real failure here too: a caller immediately calling
+	// findPartitionByNumber right after PartitionRoot returned hit "no
+	// partition 2 found" on real hardware.
+	if _, err := runx.Run([]string{"partprobe", disk}, runx.Options{}); err != nil {
+		return fmt.Errorf("disks: partprobe %s: %w", disk, err)
+	}
+	if _, err := runx.Run([]string{"udevadm", "settle"}, runx.Options{}); err != nil {
+		return fmt.Errorf("disks: udevadm settle: %w", err)
+	}
 	return nil
 }
 
@@ -296,6 +311,16 @@ func findPartitionByLabel(disk, label string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("disks: no partition on %s labeled %q", disk, label)
+}
+
+// CleanupMounts unmounts anything a previous, failed `slfhst install`
+// attempt may have left mounted under mountpoint, so a retry never
+// fails with "partition is being used" -- best-effort, ignores errors
+// since "not mounted" is the common case.
+func CleanupMounts(mountpoint string) {
+	for _, sub := range []string{"srv/data", "efi", "usr", "var", ""} {
+		runx.Run([]string{"umount", filepath.Join(mountpoint, sub)}, runx.Options{})
+	}
 }
 
 // MountRootAndVar mounts the root and var partitions (found by the

@@ -49,24 +49,9 @@ func RunPreBoot(store config.Store) (map[string]any, error) {
 	fmt.Println()
 	fmt.Println("Admin account password (used to SSH in after reboot).")
 	fmt.Println("Blank = auto-generate and print once.")
-	adminPassword, err := prompt.AskSecret("Password")
+	adminPassword, err := askPassword()
 	if err != nil {
 		return nil, err
-	}
-	if adminPassword != "" {
-		confirm, err := prompt.AskSecret("Confirm")
-		if err != nil {
-			return nil, err
-		}
-		if confirm != adminPassword {
-			return nil, fmt.Errorf("wizard: passwords didn't match")
-		}
-	} else {
-		adminPassword, err = config.GenSecret(12)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Printf("Generated admin password (write this down, shown once): %s\n", adminPassword)
 	}
 
 	cfg, err := store.Load()
@@ -161,6 +146,31 @@ func RunPostBoot(store config.Store) (map[string]any, error) {
 
 	prompt.Banner("Setup captured.")
 	return cfg, nil
+}
+
+func askPassword() (string, error) {
+	for {
+		password, err := prompt.AskSecret("Password")
+		if err != nil {
+			return "", err
+		}
+		if password == "" {
+			generated, err := config.GenSecret(12)
+			if err != nil {
+				return "", err
+			}
+			fmt.Printf("Generated admin password (write this down, shown once): %s\n", generated)
+			return generated, nil
+		}
+		confirm, err := prompt.AskSecret("Confirm")
+		if err != nil {
+			return "", err
+		}
+		if confirm == password {
+			return password, nil
+		}
+		fmt.Println("passwords didn't match, try again")
+	}
 }
 
 func writeHostname(root, hostname string) error {

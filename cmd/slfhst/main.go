@@ -1,8 +1,3 @@
-// Command slfhst is the single codebase for this appliance: installer,
-// stage2 bootstrap, OS updates, and ongoing ops/monitoring all live in
-// one binary, matching the user's explicit "one CLI codebase" correction
-// to the original per-concern-binary draft. See
-// /home/ubuntu/.claude/plans/agile-kindling-cray.md for the full design.
 package main
 
 import (
