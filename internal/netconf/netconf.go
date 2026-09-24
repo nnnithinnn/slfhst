@@ -135,27 +135,36 @@ var ipv4RE = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 var ipv6CIDRRE = regexp.MustCompile(`^[0-9a-fA-F:]+/\d{1,3}$`)
 var ipv6RE = regexp.MustCompile(`^[0-9a-fA-F:]+$`)
 
+// stripWhitespace removes embedded whitespace a pasted address can pick
+// up from a wrapped terminal/dashboard -- no valid IP/CIDR ever
+// contains whitespace, so this is always safe.
+func stripWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), "")
+}
+
 func askStatic() (*staticConfig, error) {
 	sc := &staticConfig{}
 
 	v4addr, err := prompt.Ask("IPv4 address/CIDR (e.g. 203.0.113.7/24)", prompt.Options{
-		Validate: ipv4CIDRRE.MatchString,
+		Normalize: stripWhitespace,
+		Validate:  ipv4CIDRRE.MatchString,
 	})
 	if err != nil {
 		return nil, err
 	}
 	sc.IPv4Address = v4addr
 
-	v4gw, err := prompt.Ask("IPv4 gateway", prompt.Options{Validate: ipv4RE.MatchString})
+	v4gw, err := prompt.Ask("IPv4 gateway", prompt.Options{Normalize: stripWhitespace, Validate: ipv4RE.MatchString})
 	if err != nil {
 		return nil, err
 	}
 	sc.IPv4Gateway = v4gw
 
 	for {
-		v6, err := prompt.Ask("IPv6 address/CIDR (blank to stop)", prompt.Options{
-			Optional: true,
-			Validate: ipv6CIDRRE.MatchString,
+		v6, err := prompt.Ask("IPv6 address/CIDR (blank to stop, e.g. 2001:db8::7/64)", prompt.Options{
+			Optional:  true,
+			Normalize: stripWhitespace,
+			Validate:  ipv6CIDRRE.MatchString,
 		})
 		if err != nil {
 			return nil, err
@@ -166,7 +175,7 @@ func askStatic() (*staticConfig, error) {
 		sc.IPv6Addresses = append(sc.IPv6Addresses, v6)
 	}
 	if len(sc.IPv6Addresses) > 0 {
-		v6gw, err := prompt.Ask("IPv6 gateway", prompt.Options{Validate: ipv6RE.MatchString})
+		v6gw, err := prompt.Ask("IPv6 gateway", prompt.Options{Normalize: stripWhitespace, Validate: ipv6RE.MatchString})
 		if err != nil {
 			return nil, err
 		}

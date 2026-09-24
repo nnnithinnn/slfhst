@@ -74,3 +74,23 @@ func TestAskRequiredRetriesOnBlank(t *testing.T) {
 		}
 	})
 }
+
+// TestAskNormalizeAppliesBeforeValidate is a regression test for a real
+// bug reported on real hardware: a pasted IPv6 address picked up an
+// embedded space (likely from a wrapped terminal/dashboard), and
+// TrimSpace alone only strips leading/trailing whitespace, so the
+// malformed value failed CIDR validation with no clear indication why.
+func TestAskNormalizeAppliesBeforeValidate(t *testing.T) {
+	withInput(t, "2a11:8083:11:169a: a/64\n", func() {
+		got, err := Ask("label", Options{
+			Normalize: func(s string) string { return strings.Join(strings.Fields(s), "") },
+			Validate:  func(s string) bool { return !strings.Contains(s, " ") },
+		})
+		if err != nil {
+			t.Fatalf("Ask: %v", err)
+		}
+		if got != "2a11:8083:11:169a:a/64" {
+			t.Errorf("got %q, want normalized value with whitespace stripped", got)
+		}
+	})
+}

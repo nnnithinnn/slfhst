@@ -18,6 +18,10 @@ var stdin = bufio.NewReader(os.Stdin)
 type Options struct {
 	Default  string
 	Validate func(string) bool
+	// Normalize, if set, runs on the trimmed input before Validate and
+	// before the value is returned -- e.g. stripping embedded whitespace
+	// from a pasted IP address.
+	Normalize func(string) string
 	// Optional inverts common.py's ask() default of required=True --
 	// Go's zero value (false) naturally matches "required" as the
 	// default, so this project's usual "explicit non-default states its
@@ -42,6 +46,9 @@ func Ask(label string, opts Options) (string, error) {
 		value := strings.TrimSpace(line)
 		if value == "" {
 			value = opts.Default
+		}
+		if opts.Normalize != nil && value != "" {
+			value = opts.Normalize(value)
 		}
 		if value == "" {
 			if opts.Optional {
