@@ -125,6 +125,9 @@ func Run() error {
 	if err := disks.ApplyPresets(mountpoint); err != nil {
 		return err
 	}
+	if err := disks.SetDefaultTarget(mountpoint); err != nil {
+		return err
+	}
 
 	if err := store.MarkDone("stage1"); err != nil {
 		return err

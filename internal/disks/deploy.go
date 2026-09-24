@@ -201,3 +201,22 @@ func ApplyPresets(mountpoint string) error {
 	}
 	return nil
 }
+
+// SetDefaultTarget runs `systemctl set-default multi-user.target
+// --root=<mountpoint>` -- confirmed a real, previously-unknown gap by
+// actually booting a real ISO on real hardware: nothing anywhere in
+// this project's build ever set this, and the fresh /etc this
+// installer populates has no default.target of its own, so the system
+// silently fell back to Fedora's own graphical.target default (pulling
+// in sound.target and other desktop-oriented targets this appliance
+// has no packages to actually satisfy) instead of the intended headless
+// multi-user.target. Not a preset (systemctl preset-all doesn't touch
+// default.target at all -- it's a separate plain symlink, not a
+// [Install] WantedBy= mechanism), so this needs its own explicit call.
+func SetDefaultTarget(mountpoint string) error {
+	if _, err := runx.Run([]string{"systemctl", "set-default", "multi-user.target", "--root=" + mountpoint},
+		runx.Options{Capture: true}); err != nil {
+		return fmt.Errorf("disks: systemctl set-default: %w", err)
+	}
+	return nil
+}

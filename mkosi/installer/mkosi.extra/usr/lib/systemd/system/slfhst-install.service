@@ -1,7 +1,16 @@
 [Unit]
 Description=slfhst interactive installer
-After=local-fs.target getty@tty1.service systemd-user-sessions.service
-Conflicts=getty@tty1.service
+# Real VPS/cloud providers overwhelmingly expose only a serial console
+# (confirmed directly by the project's own author: reachable via
+# console=ttyS0 but not the local tty1 VGA console at all). Confirmed
+# the hard way this session: with this bound to /dev/tty1, the whole
+# interactive install flow ran invisibly to anyone watching only
+# serial -- kernel/systemd's own generic boot messages get mirrored to
+# every configured console=, but a program's own StandardOutput=tty
+# session bound to one specific TTYPath is not, so bind to the serial
+# console instead, matching this project's actual real-world usage.
+After=local-fs.target serial-getty@ttyS0.service systemd-user-sessions.service
+Conflicts=serial-getty@ttyS0.service
 
 [Service]
 Type=oneshot
@@ -9,10 +18,9 @@ ExecStart=/usr/bin/slfhst install
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
-TTYPath=/dev/tty1
+TTYPath=/dev/ttyS0
 TTYReset=yes
 TTYVHangup=yes
-TTYVTDisallocate=yes
 
 [Install]
 WantedBy=multi-user.target
